@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      String // OWNER, EMPLOYEE
+  createdAt DateTime @default(now())
+}
+
+model Employee {
+  id         Int              @id @default(autoincrement())
+  name       String
+  role       String
+  salary     Float
+  createdAt  DateTime         @default(now())
+
+  productions MeshProduction[] @relation("MeshEmployee")
+  invoices    Invoice[]        @relation("EmployeeInvoices")
+}
+model Wire {
+  id         Int      @id @default(autoincrement())
+  type       String
+  diameter   String
+  quantityKg Float
+  pricePerKg Float
+  supplier   String
+  createdAt  DateTime @default(now())
+}
+model MeshProduction {
+  id            Int       @id @default(autoincrement())
+  meshType      String
+  wireDiameter  String     // added for tracking
+  quantity      Int
+  wireUsedKg    Float
+  employeeId    Int
+
+  // ✅ Match relation name here
+  employee      Employee  @relation("MeshEmployee", fields: [employeeId], references: [id])
+  createdAt     DateTime  @default(now())
+}
+
+model Client {
+  id        Int      @id @default(autoincrement())
+  name      String
+  phone     String?
+  address   String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  invoices Invoice[] @relation("ClientInvoices")
+}
+
+model Invoice {
+  id        Int      @id @default(autoincrement())
+  total     Float
+  createdAt DateTime @default(now())
+
+  // Relations
+  clientId Int
+  client   Client @relation("ClientInvoices", fields: [clientId], references: [id])
+
+  employeeId Int?
+  employee   Employee? @relation("EmployeeInvoices", fields: [employeeId], references: [id])
+
+  items SaleItem[] @relation("InvoiceItems")
+}
+
+model SaleItem {
+  id        Int    @id @default(autoincrement())
+  meshType  String
+  quantity  Int
+  unitPrice Float
+
+  // Relations
+  invoiceId Int
+  invoice   Invoice @relation("InvoiceItems", fields: [invoiceId], references: [id])
+}

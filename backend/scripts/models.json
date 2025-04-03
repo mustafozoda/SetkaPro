@@ -1,0 +1,460 @@
+[
+  {
+    "name": "User",
+    "fields": [
+      {
+        "name": "id",
+        "type": "Int",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "autoincrement"
+        }
+      },
+      {
+        "name": "name",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "email",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "password",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "role",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "createdAt",
+        "type": "DateTime",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "now"
+        }
+      }
+    ]
+  },
+  {
+    "name": "Employee",
+    "fields": [
+      {
+        "name": "id",
+        "type": "Int",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "autoincrement"
+        }
+      },
+      {
+        "name": "name",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "role",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "salary",
+        "type": "Float",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "createdAt",
+        "type": "DateTime",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "now"
+        }
+      },
+      {
+        "name": "productions",
+        "type": "MeshProduction",
+        "isRequired": true,
+        "isArray": true,
+        "isRelation": true,
+        "default": null
+      },
+      {
+        "name": "invoices",
+        "type": "Invoice",
+        "isRequired": true,
+        "isArray": true,
+        "isRelation": true,
+        "default": null
+      }
+    ]
+  },
+  {
+    "name": "Wire",
+    "fields": [
+      {
+        "name": "id",
+        "type": "Int",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "autoincrement"
+        }
+      },
+      {
+        "name": "type",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "diameter",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "quantityKg",
+        "type": "Float",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "pricePerKg",
+        "type": "Float",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "supplier",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "createdAt",
+        "type": "DateTime",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "now"
+        }
+      }
+    ]
+  },
+  {
+    "name": "MeshProduction",
+    "fields": [
+      {
+        "name": "id",
+        "type": "Int",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "autoincrement"
+        }
+      },
+      {
+        "name": "meshType",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "wireDiameter",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "quantity",
+        "type": "Int",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "wireUsedKg",
+        "type": "Float",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "employeeId",
+        "type": "Int",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "employee",
+        "type": "Employee",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": true,
+        "default": null
+      },
+      {
+        "name": "createdAt",
+        "type": "DateTime",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "now"
+        }
+      }
+    ]
+  },
+  {
+    "name": "Client",
+    "fields": [
+      {
+        "name": "id",
+        "type": "Int",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "autoincrement"
+        }
+      },
+      {
+        "name": "name",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "phone",
+        "type": "String",
+        "isRequired": false,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "address",
+        "type": "String",
+        "isRequired": false,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "createdAt",
+        "type": "DateTime",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "now"
+        }
+      },
+      {
+        "name": "invoices",
+        "type": "Invoice",
+        "isRequired": true,
+        "isArray": true,
+        "isRelation": true,
+        "default": null
+      }
+    ]
+  },
+  {
+    "name": "Invoice",
+    "fields": [
+      {
+        "name": "id",
+        "type": "Int",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "autoincrement"
+        }
+      },
+      {
+        "name": "total",
+        "type": "Float",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "createdAt",
+        "type": "DateTime",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "now"
+        }
+      },
+      {
+        "name": "clientId",
+        "type": "Int",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "client",
+        "type": "Client",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": true,
+        "default": null
+      },
+      {
+        "name": "employeeId",
+        "type": "Int",
+        "isRequired": false,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "employee",
+        "type": "Employee",
+        "isRequired": false,
+        "isArray": false,
+        "isRelation": true,
+        "default": null
+      },
+      {
+        "name": "items",
+        "type": "SaleItem",
+        "isRequired": true,
+        "isArray": true,
+        "isRelation": true,
+        "default": null
+      }
+    ]
+  },
+  {
+    "name": "SaleItem",
+    "fields": [
+      {
+        "name": "id",
+        "type": "Int",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": {
+          "type": "function",
+          "name": "autoincrement"
+        }
+      },
+      {
+        "name": "meshType",
+        "type": "String",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "quantity",
+        "type": "Int",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "unitPrice",
+        "type": "Float",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "invoiceId",
+        "type": "Int",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": false,
+        "default": null
+      },
+      {
+        "name": "invoice",
+        "type": "Invoice",
+        "isRequired": true,
+        "isArray": false,
+        "isRelation": true,
+        "default": null
+      }
+    ]
+  }
+]
