@@ -1,0 +1,2283 @@
+
+
+--- File: dump_all_codes.ts ---
+import fs from "fs";
+import path from "path";
+
+// Extensions to include
+const allowedExtensions = [".ts", ".prisma", ".json", ".md", ".env.example"];
+
+// Specific files to exclude (regardless of extension)
+const excludedFiles = ["package-lock.json", "yarn.lock"];
+
+// Folders to skip
+const excludedDirs = ["node_modules", ".git", "dist", "build", "coverage"];
+
+const outputFile = "code_dump.txt";
+const outputStream = fs.createWriteStream(outputFile, { flags: "w" });
+
+function shouldInclude(file: string): boolean {
+  const extOk = allowedExtensions.some((ext) => file.endsWith(ext));
+  const nameOk = !excludedFiles.includes(path.basename(file));
+  return extOk && nameOk;
+}
+
+function shouldExcludeDir(dirName: string): boolean {
+  return excludedDirs.includes(dirName);
+}
+
+function collectFiles(dir: string) {
+  const items = fs.readdirSync(dir, { withFileTypes: true });
+
+  for (const item of items) {
+    const fullPath = path.join(dir, item.name);
+
+    if (item.isDirectory()) {
+      if (!shouldExcludeDir(item.name)) {
+        collectFiles(fullPath);
+      }
+    } else if (shouldInclude(item.name)) {
+      try {
+        const content = fs.readFileSync(fullPath, "utf-8");
+
+        outputStream.write(`\n\n--- File: ${fullPath} ---\n`);
+        outputStream.write(content);
+      } catch (err) {
+        console.error(`❌ Failed to read ${fullPath}:`, err);
+      }
+    }
+  }
+}
+
+collectFiles(".");
+outputStream.end(() => {
+  console.log(`✅ Code dump saved to ${outputFile}`);
+});
+
+
+--- File: package.json ---
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@mrleebo/prisma-ast": "^0.12.1",
+    "@prisma/client": "^6.5.0",
+    "backend": "file:",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pdfkit": "^0.16.0",
+    "prisma": "^6.5.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^3.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.14.0",
+    "@types/pdfkit": "^0.13.9",
+    "@types/swagger-jsdoc": "^6.0.4",
+    "@types/swagger-ui-express": "^4.1.8",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
+  }
+}
+
+
+--- File: prisma\schema.prisma ---
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      String // OWNER, EMPLOYEE
+  createdAt DateTime @default(now())
+}
+
+model Employee {
+  id         Int              @id @default(autoincrement())
+  name       String
+  role       String
+  salary     Float
+  createdAt  DateTime         @default(now())
+
+  productions MeshProduction[] @relation("MeshEmployee")
+  invoices    Invoice[]        @relation("EmployeeInvoices")
+}
+model Wire {
+  id         Int      @id @default(autoincrement())
+  type       String
+  diameter   String
+  quantityKg Float
+  pricePerKg Float
+  supplier   String
+  createdAt  DateTime @default(now())
+}
+model MeshProduction {
+  id            Int       @id @default(autoincrement())
+  meshType      String
+  wireDiameter  String     // added for tracking
+  quantity      Int
+  wireUsedKg    Float
+  employeeId    Int
+
+  // ✅ Match relation name here
+  employee      Employee  @relation("MeshEmployee", fields: [employeeId], references: [id])
+  createdAt     DateTime  @default(now())
+}
+
+model Client {
+  id        Int      @id @default(autoincrement())
+  name      String
+  phone     String?
+  address   String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  invoices Invoice[] @relation("ClientInvoices")
+}
+
+model Invoice {
+  id        Int      @id @default(autoincrement())
+  total     Float
+  createdAt DateTime @default(now())
+
+  // Relations
+  clientId Int
+  client   Client @relation("ClientInvoices", fields: [clientId], references: [id])
+
+  employeeId Int?
+  employee   Employee? @relation("EmployeeInvoices", fields: [employeeId], references: [id])
+
+  items SaleItem[] @relation("InvoiceItems")
+}
+
+model SaleItem {
+  id        Int    @id @default(autoincrement())
+  meshType  String
+  quantity  Int
+  unitPrice Float
+
+  // Relations
+  invoiceId Int
+  invoice   Invoice @relation("InvoiceItems", fields: [invoiceId], references: [id])
+}
+
+
+--- File: scripts\listModels.ts ---
+import fs from "fs";
+import path from "path";
+
+const schemaPath = path.join(__dirname, "../prisma/schema.prisma");
+const schema = fs.readFileSync(schemaPath, "utf-8");
+
+// Match all models
+const matches = Array.from(schema.matchAll(/model (\w+) \{/g));
+const modelNames = matches.map((m) => m[1]);
+
+// Output JSON format
+const jsonOutput = {
+  models: modelNames,
+};
+
+console.log(JSON.stringify(jsonOutput, null, 2));
+// npx ts-node scripts/listModels.ts
+
+
+--- File: scripts\parseSchema.ts ---
+import fs from "fs";
+import path from "path";
+import { getSchema } from "@mrleebo/prisma-ast";
+
+const schemaPath = path.join(__dirname, "../prisma/schema.prisma");
+const schema = fs.readFileSync(schemaPath, "utf-8");
+
+const ast = getSchema(schema);
+
+const models = ast.list
+  .filter((node: any) => node.type === "model")
+  .map((model: any) => ({
+    name: model.name,
+    fields: model.properties
+      .filter((p: any) => p.type === "field")
+      .map((field: any) => ({
+        name: field.name,
+        type: field.fieldType,
+        isRequired: !field.optional,
+        isArray: !!field.array,
+        isRelation:
+          field.attributes?.some((a: any) => a.name === "relation") || false,
+        default:
+          field.attributes?.find((a: any) => a.name === "default")?.args?.[0]
+            ?.value ?? null,
+      })),
+  }));
+
+const jsonOutput = JSON.stringify(models, null, 2);
+
+// ✅ Save to file
+const outputPath = path.join(__dirname, "models.json");
+fs.writeFileSync(outputPath, jsonOutput, "utf-8");
+
+// ✅ Also print to console
+console.log(jsonOutput);
+
+// npx ts-node scripts/parseSchema.ts
+
+
+--- File: src\controllers\auth.controller.ts ---
+import { Request, Response } from "express";
+import prisma from "../prisma/client";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+
+export const register = async (req: Request, res: Response) => {
+  const { name, email, password, role } = req.body;
+
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) return res.status(400).json({ error: "Email already in use" });
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const user = await prisma.user.create({
+    data: {
+      name,
+      email,
+      password: hashedPassword,
+      role,
+    },
+  });
+
+  const token = jwt.sign(
+    { id: user.id, role: user.role },
+    process.env.JWT_SECRET!,
+    {
+      expiresIn: "7d",
+    }
+  );
+
+  res.status(201).json({
+    user: { id: user.id, name: user.name, role: user.role },
+    token,
+  });
+};
+
+export const login = async (req: Request, res: Response) => {
+  const { email, password } = req.body;
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) return res.status(401).json({ error: "Invalid credentials" });
+
+  const valid = await bcrypt.compare(password, user.password);
+  if (!valid) return res.status(401).json({ error: "Invalid credentials" });
+
+  const token = jwt.sign(
+    { id: user.id, role: user.role },
+    process.env.JWT_SECRET!,
+    {
+      expiresIn: "7d",
+    }
+  );
+
+  res.json({
+    user: { id: user.id, name: user.name, role: user.role },
+    token,
+  });
+};
+
+export const listUsers = async (req: Request, res: Response) => {
+  const { role, name } = req.query;
+
+  const users = await prisma.user.findMany({
+    where: {
+      ...(role && { role: String(role) }),
+      ...(name && {
+        name: {
+          contains: String(name),
+          mode: "insensitive",
+        },
+      }),
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  res.json(users);
+};
+
+
+--- File: src\controllers\client.controller.ts ---
+import { Request, Response } from "express";
+import prisma from "../prisma/client";
+
+// CREATE
+export const createClient = async (req: Request, res: Response) => {
+  const { name, phone, address } = req.body;
+  if (!name) return res.status(400).json({ error: "Client name is required" });
+
+  const client = await prisma.client.create({ data: { name, phone, address } });
+  res.status(201).json(client);
+};
+
+// READ
+export const getAllClients = async (_req: Request, res: Response) => {
+  const clients = await prisma.client.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+  res.json(clients);
+};
+
+// UPDATE
+export const updateClient = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { name, phone, address } = req.body;
+
+  const updated = await prisma.client.update({
+    where: { id: Number(id) },
+    data: { name, phone, address },
+  });
+
+  res.json(updated);
+};
+
+// DELETE
+export const deleteClient = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  await prisma.client.delete({ where: { id: Number(id) } });
+  res.json({ message: "Client deleted successfully" });
+};
+
+
+--- File: src\controllers\employee.controller.ts ---
+import { Request, Response } from "express";
+import prisma from "../prisma/client";
+
+export const addEmployee = async (req: Request, res: Response) => {
+  try {
+    const { name, role, salary } = req.body;
+
+    if (!name || !role || salary === undefined) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const employee = await prisma.employee.create({
+      data: { name, role, salary },
+    });
+
+    res.status(201).json(employee);
+  } catch (error) {
+    console.error("Error adding employee:", error);
+    res.status(500).json({ error: "Failed to add employee" });
+  }
+};
+
+export const getAllEmployees = async (_req: Request, res: Response) => {
+  try {
+    const employees = await prisma.employee.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json(employees);
+  } catch (error) {
+    console.error("Error getting employees:", error);
+    res.status(500).json({ error: "Failed to get employees" });
+  }
+};
+
+export const updateEmployee = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, role, salary } = req.body;
+
+    const employeeId = Number(id);
+    if (isNaN(employeeId)) {
+      return res.status(400).json({ error: "Invalid employee ID" });
+    }
+
+    const existing = await prisma.employee.findUnique({
+      where: { id: employeeId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Employee not found" });
+    }
+
+    const updated = await prisma.employee.update({
+      where: { id: employeeId },
+      data: { name, role, salary },
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating employee:", error);
+    res.status(500).json({ error: "Failed to update employee" });
+  }
+};
+
+export const deleteEmployee = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const employeeId = Number(id);
+
+    if (isNaN(employeeId)) {
+      return res.status(400).json({ error: "Invalid employee ID" });
+    }
+
+    const existing = await prisma.employee.findUnique({
+      where: { id: employeeId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Employee not found" });
+    }
+
+    await prisma.employee.delete({ where: { id: employeeId } });
+    res.json({ message: "Employee deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting employee:", error);
+    res.status(500).json({ error: "Failed to delete employee" });
+  }
+};
+
+
+--- File: src\controllers\invoice.controller.ts ---
+import { Request, Response } from "express";
+import prisma from "../prisma/client";
+import { startOfMonth, endOfMonth } from "date-fns";
+
+export const createInvoice = async (req: Request, res: Response) => {
+  const { clientId, employeeId, items } = req.body;
+
+  if (!clientId || !items || items.length === 0) {
+    return res.status(400).json({ error: "Client and items are required" });
+  }
+
+  const total = items.reduce((sum: number, item: any) => {
+    return sum + item.unitPrice * item.quantity;
+  }, 0);
+
+  const invoice = await prisma.invoice.create({
+    data: {
+      clientId,
+      employeeId,
+      total,
+      items: {
+        create: items.map((item: any) => ({
+          meshType: item.meshType,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+        })),
+      },
+    },
+    include: {
+      client: true,
+      employee: true,
+      items: true,
+    },
+  });
+
+  res.status(201).json(invoice);
+};
+
+export const getInvoices = async (req: Request, res: Response) => {
+  const { month, clientId } = req.query;
+
+  const where: any = {};
+  if (month) {
+    const [year, m] = (month as string).split("-").map(Number);
+    where.createdAt = {
+      gte: startOfMonth(new Date(year, m - 1)),
+      lte: endOfMonth(new Date(year, m - 1)),
+    };
+  }
+  if (clientId) {
+    where.clientId = Number(clientId);
+  }
+
+  const invoices = await prisma.invoice.findMany({
+    where,
+    include: {
+      client: true,
+      employee: true,
+      items: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  res.json(invoices);
+};
+
+export const updateInvoice = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { items } = req.body;
+
+  if (!items || items.length === 0) {
+    return res.status(400).json({ error: "Invoice items required" });
+  }
+
+  const total = items.reduce((sum: number, item: any) => {
+    return sum + item.unitPrice * item.quantity;
+  }, 0);
+
+  // Delete existing items
+  await prisma.saleItem.deleteMany({ where: { invoiceId: Number(id) } });
+
+  const invoice = await prisma.invoice.update({
+    where: { id: Number(id) },
+    data: {
+      total,
+      items: {
+        create: items.map((item: any) => ({
+          meshType: item.meshType,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+        })),
+      },
+    },
+    include: {
+      client: true,
+      employee: true,
+      items: true,
+    },
+  });
+
+  res.json(invoice);
+};
+
+
+--- File: src\controllers\mesh.controller.ts ---
+import { Request, Response } from "express";
+import prisma from "../prisma/client";
+import { asyncHandler } from "../utils/asyncHandler";
+
+// GET all mesh
+export const getAllMesh = asyncHandler(async (_req: Request, res: Response) => {
+  const mesh = await prisma.meshProduction.findMany({
+    include: { employee: true },
+    orderBy: { createdAt: "desc" },
+  });
+  res.json(mesh);
+});
+
+// POST create mesh + deduct wire by type & diameter
+export const addMesh = asyncHandler(async (req: Request, res: Response) => {
+  const { meshType, quantity, wireUsedKg, wireDiameter, employeeId } = req.body;
+
+  if (!meshType || !wireDiameter || !quantity || !wireUsedKg || !employeeId) {
+    return res.status(400).json({ error: "Missing required mesh fields" });
+  }
+
+  // Create mesh production
+  const mesh = await prisma.meshProduction.create({
+    data: { meshType, quantity, wireUsedKg, wireDiameter, employeeId },
+  });
+
+  const baseType = meshType.split("x")[0]; // e.g., "10" from "10x10"
+
+  // Deduct wire based on type + diameter
+  const wireUpdate = await prisma.wire.updateMany({
+    where: {
+      type: baseType,
+      diameter: wireDiameter,
+    },
+    data: {
+      quantityKg: {
+        decrement: wireUsedKg,
+      },
+    },
+  });
+
+  if (wireUpdate.count === 0) {
+    return res.status(404).json({
+      error: `No matching wire found for type "${baseType}" and diameter "${wireDiameter}"`,
+    });
+  }
+
+  res.status(201).json(mesh);
+});
+
+
+--- File: src\controllers\report.controller.ts ---
+import { Request, Response } from "express";
+import prisma from "../prisma/client";
+import { startOfMonth, endOfMonth } from "date-fns";
+import PDFDocument from "pdfkit";
+
+// 🔁 Shared data logic
+export const getMonthlyData = async (month: string) => {
+  const [year, m] = month.split("-").map(Number);
+  const from = startOfMonth(new Date(year, m - 1));
+  const to = endOfMonth(from);
+
+  const productions = await prisma.meshProduction.findMany({
+    where: { createdAt: { gte: from, lte: to } },
+    include: { employee: true },
+  });
+
+  const invoices = await prisma.invoice.findMany({
+    where: { createdAt: { gte: from, lte: to } },
+    include: { client: true, employee: true, items: true },
+  });
+
+  const productionByEmployee = productions.reduce((acc: any, p) => {
+    const emp = p.employee?.name || "Unknown";
+    acc[emp] = (acc[emp] || 0) + p.quantity;
+    return acc;
+  }, {});
+
+  const productionByType = productions.reduce((acc: any, p) => {
+    acc[p.meshType] = (acc[p.meshType] || 0) + p.quantity;
+    return acc;
+  }, {});
+
+  const wireUsedKg = productions.reduce((sum, p) => sum + p.wireUsedKg, 0);
+  const totalProduced = productions.reduce((sum, p) => sum + p.quantity, 0);
+
+  const salesByType = invoices
+    .flatMap((i) => i.items)
+    .reduce((acc: any, item) => {
+      acc[item.meshType] = (acc[item.meshType] || 0) + item.quantity;
+      return acc;
+    }, {});
+
+  const totalSold = Object.values(salesByType).reduce(
+    (sum: number, q: any) => sum + q,
+    0
+  );
+
+  const totalRevenue = invoices.reduce((sum, i) => sum + i.total, 0);
+
+  const unsoldMesh = Object.keys(productionByType).reduce((acc: any, type) => {
+    acc[type] = (productionByType[type] || 0) - (salesByType[type] || 0);
+    return acc;
+  }, {});
+
+  const topClients = Object.values(
+    invoices.reduce((acc: any, i) => {
+      const id = i.clientId;
+      if (!acc[id]) acc[id] = { name: i.client.name, totalSpent: 0 };
+      acc[id].totalSpent += i.total;
+      return acc;
+    }, {})
+  ).sort((a: any, b: any) => b.totalSpent - a.totalSpent);
+
+  return {
+    month,
+    totalMeshProduced: totalProduced,
+    wireUsedKg,
+    totalSold,
+    totalRevenue,
+    productionByEmployee,
+    productionByType,
+    salesByType,
+    unsoldMesh,
+    topClients,
+    invoices,
+  };
+};
+
+// 📄 PDF Export
+export const generateMonthlyPdfReport = async (req: Request, res: Response) => {
+  try {
+    const month = req.query.month as string;
+    if (!month)
+      return res
+        .status(400)
+        .json({ error: "Month is required (e.g., 2025-04)" });
+
+    const report = await getMonthlyData(month);
+
+    const doc = new PDFDocument();
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="Monthly-Report-${month}.pdf"`
+    );
+
+    doc.fontSize(20).text(`Monthly Report - ${month}`, { align: "center" });
+    doc.moveDown();
+
+    doc.fontSize(14).text(`Total Mesh Produced: ${report.totalMeshProduced}`);
+    doc.text(`Wire Used (kg): ${report.wireUsedKg}`);
+    doc.text(`Total Sold: ${report.totalSold}`);
+    doc.text(`Total Revenue: $${report.totalRevenue}`);
+    doc.moveDown();
+
+    doc.fontSize(16).text("Invoices", { underline: true });
+    report.invoices.forEach((inv) => {
+      doc.moveDown(0.5);
+      doc
+        .fontSize(12)
+        .text(
+          `#${inv.id} | ${inv.client.name} | ${inv.total}$ | ${new Date(
+            inv.createdAt
+          ).toLocaleDateString()}`
+        );
+      inv.items.forEach((item) => {
+        doc.text(
+          ` - ${item.meshType} | Qty: ${item.quantity} | Price: ${item.unitPrice}$`
+        );
+      });
+    });
+
+    doc.end();
+    doc.pipe(res);
+  } catch (err) {
+    console.error("PDF generation error:", err);
+    res.status(500).json({ error: "Failed to generate PDF" });
+  }
+};
+
+// 📊 JSON report
+export const getMonthlyReport = async (req: Request, res: Response) => {
+  try {
+    const month = req.query.month as string;
+    if (!month)
+      return res
+        .status(400)
+        .json({ error: "Month is required (e.g., 2025-04)" });
+
+    const report = await getMonthlyData(month);
+    res.json(report);
+  } catch (err) {
+    console.error("Monthly report error:", err);
+    res.status(500).json({ error: "Failed to fetch report" });
+  }
+};
+
+
+--- File: src\controllers\wire.controller.ts ---
+import { Request, Response } from "express";
+import prisma from "../prisma/client";
+
+// Add new wire stock
+export const addWire = async (req: Request, res: Response) => {
+  try {
+    const { type, diameter, quantityKg, pricePerKg, supplier } = req.body;
+
+    if (
+      !type ||
+      !diameter ||
+      quantityKg == null ||
+      pricePerKg == null ||
+      !supplier
+    ) {
+      return res.status(400).json({ error: "Missing required wire fields" });
+    }
+
+    const wire = await prisma.wire.create({
+      data: { type, diameter, quantityKg, pricePerKg, supplier },
+    });
+
+    res.status(201).json(wire);
+  } catch (err) {
+    console.error("Add wire error:", err);
+    res.status(500).json({ error: "Failed to add wire" });
+  }
+};
+
+// Get all wire entries
+export const getAllWire = async (_req: Request, res: Response) => {
+  try {
+    const wires = await prisma.wire.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(wires);
+  } catch (err) {
+    console.error("Get wire error:", err);
+    res.status(500).json({ error: "Failed to fetch wires" });
+  }
+};
+
+// Get available wire (for production)
+export const getAvailableWire = async (_req: Request, res: Response) => {
+  try {
+    const wires = await prisma.wire.findMany({
+      select: {
+        id: true,
+        type: true,
+        diameter: true,
+        quantityKg: true,
+        pricePerKg: true,
+        supplier: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json(wires);
+  } catch (err) {
+    console.error("Get available wire error:", err);
+    res.status(500).json({ error: "Failed to fetch available wire" });
+  }
+};
+
+// Update wire
+export const updateWire = async (req: Request, res: Response) => {
+  try {
+    const wireId = Number(req.params.id);
+    const { type, diameter, quantityKg, pricePerKg, supplier } = req.body;
+
+    const existing = await prisma.wire.findUnique({ where: { id: wireId } });
+    if (!existing) return res.status(404).json({ error: "Wire not found" });
+
+    const updated = await prisma.wire.update({
+      where: { id: wireId },
+      data: { type, diameter, quantityKg, pricePerKg, supplier },
+    });
+
+    res.json(updated);
+  } catch (err) {
+    console.error("Update wire error:", err);
+    res.status(500).json({ error: "Failed to update wire" });
+  }
+};
+
+// Delete wire
+export const deleteWire = async (req: Request, res: Response) => {
+  try {
+    const wireId = Number(req.params.id);
+    const existing = await prisma.wire.findUnique({ where: { id: wireId } });
+    if (!existing) return res.status(404).json({ error: "Wire not found" });
+
+    await prisma.wire.delete({ where: { id: wireId } });
+    res.json({ message: "Wire deleted successfully" });
+  } catch (err) {
+    console.error("Delete wire error:", err);
+    res.status(500).json({ error: "Failed to delete wire" });
+  }
+};
+
+
+--- File: src\docs\models.md ---
+# 📦 Prisma Model Overview
+
+## User
+
+- **Fields:** id, name, email, password, role, createdAt
+- **Purpose:** Authentication and access control
+
+## Employee
+
+- **Fields:** id, name, role, salary, createdAt
+- **Relations:** MeshProductions, Invoices
+- **Purpose:** Track factory employees
+
+## Wire
+
+- **Fields:** type, diameter, quantityKg, pricePerKg, supplier, createdAt
+- **Purpose:** Manage inventory of raw wire
+
+## MeshProduction
+
+- **Fields:** meshType, quantity, wireUsedKg, wireDiameter, employeeId, createdAt
+- **Relations:** ↔ Employee
+- **Purpose:** Track daily mesh production
+
+## Client
+
+- **Fields:** name, phone, address, createdAt
+- **Relations:** ↔ Invoice[]
+- **Purpose:** Customer details
+
+## Invoice
+
+- **Fields:** id, total, createdAt
+- **Relations:** ↔ Client, ↔ Employee, ↔ SaleItems
+- **Purpose:** Represents a sale
+
+## SaleItem
+
+- **Fields:** meshType, quantity, unitPrice
+- **Relations:** ↔ Invoice
+- **Purpose:** Individual mesh items sold
+
+
+--- File: src\docs\swagger.ts ---
+import swaggerJsdoc from "swagger-jsdoc";
+import swaggerUi from "swagger-ui-express";
+
+const options = {
+  definition: {
+    openapi: "3.0.0",
+    info: {
+      title: "SetkaPro API",
+      version: "1.0.0",
+      description: "API documentation for SetkaPro system",
+    },
+    servers: [
+      {
+        url: "http://localhost:3001",
+        description: "Local server",
+      },
+    ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+        },
+      },
+    },
+    security: [{ bearerAuth: [] }],
+  },
+  apis: ["./src/routes/*.ts"],
+};
+
+const specs = swaggerJsdoc(options);
+
+export { swaggerUi, specs };
+
+
+--- File: src\index.ts ---
+import express, { Request, Response } from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+
+// Import Routes
+import authRoutes from "./routes/auth.routes";
+import wireRoutes from "./routes/wire.routes";
+import employeeRoutes from "./routes/employee.routes";
+import meshRoutes from "./routes/mesh.routes";
+import invoiceRoutes from "./routes/invoice.routes";
+import clientRoutes from "./routes/client.routes";
+import reportRoutes from "./routes/report.routes";
+import { swaggerUi, specs } from "./docs/swagger";
+// Load environment variables
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Route Handlers
+app.use("/api/auth", authRoutes);
+app.use("/api/wire", wireRoutes);
+app.use("/api/employees", employeeRoutes);
+app.use("/api/mesh", meshRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/clients", clientRoutes);
+app.use("/api/invoices", invoiceRoutes);
+app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(specs));
+// Default Route
+app.get("/", (req: Request, res: Response) => {
+  res.send("SetkaPro API running ✅");
+});
+
+// Start Server
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});
+
+
+--- File: src\middleware\auth.middleware.ts ---
+import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
+
+export interface AuthRequest extends Request {
+  user?: { id: number; role: string };
+}
+
+export const verifyToken = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): void => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Missing or invalid token" });
+    return;
+  }
+
+  try {
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
+      id: number;
+      role: string;
+    };
+    req.user = decoded;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: "Invalid or expired token" });
+  }
+};
+
+export const requireOwner = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (req.user?.role !== "OWNER") {
+    res.status(403).json({ error: "Only OWNER has access" });
+    return;
+  }
+  next();
+};
+
+
+--- File: src\prisma\client.ts ---
+// =============================
+// 2. CLIENT - prisma/client.ts
+// =============================
+
+import { PrismaClient } from "@prisma/client";
+const prisma = new PrismaClient();
+export default prisma;
+
+
+--- File: src\routes\auth.routes.ts ---
+import express from "express";
+import { register, login, listUsers } from "../controllers/auth.controller";
+import { verifyToken, requireOwner } from "../middleware/auth.middleware";
+import { asyncHandler } from "../utils/asyncHandler";
+
+const router = express.Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Auth
+ *   description: User authentication and role-based control
+ */
+
+/**
+ * @swagger
+ * /api/auth/register:
+ *   post:
+ *     summary: Register a new user
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email, password, role]
+ *             properties:
+ *               name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [OWNER, EMPLOYEE]
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     name:
+ *                       type: string
+ *                     role:
+ *                       type: string
+ *                 token:
+ *                   type: string
+ */
+
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: Log in and get token
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: User logged in
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     id: { type: integer }
+ *                     name: { type: string }
+ *                     role: { type: string }
+ *                 token:
+ *                   type: string
+ */
+
+/**
+ * @swagger
+ * /api/auth/users:
+ *   get:
+ *     summary: List all users (OWNER only)
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: role
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [OWNER, EMPLOYEE]
+ *         description: Filter users by role
+ *       - in: query
+ *         name: name
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Filter users by partial name match (case-insensitive)
+ *     responses:
+ *       200:
+ *         description: List of registered users
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                   name:
+ *                     type: string
+ *                   email:
+ *                     type: string
+ *                   role:
+ *                     type: string
+ *                   createdAt:
+ *                     type: string
+ *                     format: date-time
+ *       403:
+ *         description: Only OWNER can access this
+ *       401:
+ *         description: Missing or invalid token
+ */
+
+router.post("/register", asyncHandler(register));
+router.post("/login", asyncHandler(login));
+router.get("/users", verifyToken, requireOwner, asyncHandler(listUsers));
+
+export default router;
+
+
+--- File: src\routes\client.routes.ts ---
+import express from "express";
+import {
+  createClient,
+  getAllClients,
+  updateClient,
+  deleteClient,
+} from "../controllers/client.controller";
+import { verifyToken } from "../middleware/auth.middleware";
+import { asyncHandler } from "../utils/asyncHandler";
+
+const router = express.Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Clients
+ *   description: Manage client data
+ */
+
+/**
+ * @swagger
+ * /api/clients:
+ *   get:
+ *     summary: Get all clients
+ *     tags: [Clients]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of clients
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                   name:
+ *                     type: string
+ *                   phone:
+ *                     type: string
+ *                   address:
+ *                     type: string
+ *                   createdAt:
+ *                     type: string
+ *                     format: date-time
+ */
+
+/**
+ * @swagger
+ * /api/clients/create:
+ *   post:
+ *     summary: Add a new client
+ *     tags: [Clients]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               address:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Client created
+ */
+
+/**
+ * @swagger
+ * /api/clients/update/{id}:
+ *   put:
+ *     summary: Update client info
+ *     tags: [Clients]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               address:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Client updated
+ */
+
+/**
+ * @swagger
+ * /api/clients/delete/{id}:
+ *   delete:
+ *     summary: Delete a client
+ *     tags: [Clients]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Client deleted
+ */
+
+router.post("/create", verifyToken, asyncHandler(createClient));
+router.get("/", verifyToken, asyncHandler(getAllClients));
+router.put("/update/:id", verifyToken, asyncHandler(updateClient));
+router.delete("/delete/:id", verifyToken, asyncHandler(deleteClient));
+
+export default router;
+
+
+--- File: src\routes\employee.routes.ts ---
+import express from "express";
+import {
+  addEmployee,
+  getAllEmployees,
+  updateEmployee,
+  deleteEmployee,
+} from "../controllers/employee.controller";
+import { verifyToken, requireOwner } from "../middleware/auth.middleware";
+import { asyncHandler } from "../utils/asyncHandler";
+
+const router = express.Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Employees
+ *   description: Manage factory employees
+ */
+
+/**
+ * @swagger
+ * /api/employees:
+ *   post:
+ *     summary: Add a new employee
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, role, salary]
+ *             properties:
+ *               name:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 example: mesh_maker
+ *               salary:
+ *                 type: number
+ *     responses:
+ *       201:
+ *         description: Created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Employee'
+ *
+ *   get:
+ *     summary: List all employees
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of employees
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Employee'
+ */
+
+/**
+ * @swagger
+ * /api/employees/{id}:
+ *   put:
+ *     summary: Update employee by ID
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               role: { type: string }
+ *               salary: { type: number }
+ *     responses:
+ *       200:
+ *         description: Employee updated
+ *
+ *   delete:
+ *     summary: Delete employee by ID
+ *     tags: [Employees]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Deleted successfully
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Employee:
+ *       type: object
+ *       properties:
+ *         id: { type: integer }
+ *         name: { type: string }
+ *         role: { type: string }
+ *         salary: { type: number }
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ */
+
+router.get("/", verifyToken, asyncHandler(getAllEmployees));
+router.post("/", verifyToken, requireOwner, asyncHandler(addEmployee));
+router.put("/:id", verifyToken, requireOwner, asyncHandler(updateEmployee));
+router.delete("/:id", verifyToken, requireOwner, asyncHandler(deleteEmployee));
+
+export default router;
+
+
+--- File: src\routes\invoice.routes.ts ---
+import express from "express";
+import {
+  createInvoice,
+  getInvoices,
+  updateInvoice,
+} from "../controllers/invoice.controller";
+import { verifyToken } from "../middleware/auth.middleware";
+import { asyncHandler } from "../utils/asyncHandler";
+
+const router = express.Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Invoices
+ *   description: Manage sales/invoicing system
+ */
+
+/**
+ * @swagger
+ * /api/invoices:
+ *   get:
+ *     summary: List all invoices
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: month
+ *         schema: { type: string, example: "2025-04" }
+ *         description: Filter by month (YYYY-MM)
+ *       - in: query
+ *         name: clientId
+ *         schema: { type: integer }
+ *         description: Filter by client ID
+ *     responses:
+ *       200:
+ *         description: List of invoices
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id: { type: integer }
+ *                   total: { type: number }
+ *                   createdAt:
+ *                     type: string
+ *                     format: date-time
+ *                   client:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: integer }
+ *                       name: { type: string }
+ *                   employee:
+ *                     type: object
+ *                     nullable: true
+ *                     properties:
+ *                       id: { type: integer }
+ *                       name: { type: string }
+ *                   items:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         meshType: { type: string }
+ *                         quantity: { type: integer }
+ *                         unitPrice: { type: number }
+ */
+
+/**
+ * @swagger
+ * /api/invoices/create:
+ *   post:
+ *     summary: Create new invoice
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [clientId, items]
+ *             properties:
+ *               clientId: { type: integer }
+ *               employeeId: { type: integer }
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [meshType, quantity, unitPrice]
+ *                   properties:
+ *                     meshType: { type: string }
+ *                     quantity: { type: integer }
+ *                     unitPrice: { type: number }
+ *     responses:
+ *       201:
+ *         description: Invoice created
+ */
+
+/**
+ * @swagger
+ * /api/invoices/update/{id}:
+ *   put:
+ *     summary: Update existing invoice
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [items]
+ *             properties:
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     meshType: { type: string }
+ *                     quantity: { type: integer }
+ *                     unitPrice: { type: number }
+ *     responses:
+ *       200:
+ *         description: Invoice updated
+ */
+
+router.post("/create", verifyToken, asyncHandler(createInvoice));
+router.get("/", verifyToken, asyncHandler(getInvoices));
+router.put("/update/:id", verifyToken, asyncHandler(updateInvoice));
+
+export default router;
+
+
+--- File: src\routes\mesh.routes.ts ---
+import express from "express";
+import { addMesh, getAllMesh } from "../controllers/mesh.controller";
+import { verifyToken } from "../middleware/auth.middleware";
+import { asyncHandler } from "../utils/asyncHandler";
+
+const router = express.Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Mesh
+ *   description: Mesh production tracking
+ */
+
+/**
+ * @swagger
+ * /api/mesh:
+ *   get:
+ *     summary: Get all mesh production records
+ *     tags: [Mesh]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of mesh records
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id: { type: integer }
+ *                   meshType: { type: string }
+ *                   wireDiameter: { type: string }
+ *                   quantity: { type: integer }
+ *                   wireUsedKg: { type: number }
+ *                   employee:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: integer }
+ *                       name: { type: string }
+ *                   createdAt: { type: string, format: date-time }
+ */
+
+/**
+ * @swagger
+ * /api/mesh/create:
+ *   post:
+ *     summary: Add a mesh production entry
+ *     tags: [Mesh]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [meshType, wireDiameter, quantity, wireUsedKg, employeeId]
+ *             properties:
+ *               meshType:
+ *                 type: string
+ *                 example: "10x10"
+ *               wireDiameter:
+ *                 type: string
+ *                 example: "6mm"
+ *               quantity:
+ *                 type: integer
+ *               wireUsedKg:
+ *                 type: number
+ *               employeeId:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Mesh entry created
+ */
+
+router.get("/", verifyToken, asyncHandler(getAllMesh));
+router.post("/create", verifyToken, asyncHandler(addMesh));
+
+export default router;
+
+
+--- File: src\routes\report.routes.ts ---
+import express, { Request, Response } from "express";
+import {
+  getMonthlyReport,
+  generateMonthlyPdfReport,
+  getMonthlyData,
+} from "../controllers/report.controller";
+
+import { exportMonthlyReportToExcel } from "../utils/excelExporter";
+import { verifyToken, requireOwner } from "../middleware/auth.middleware";
+import { asyncHandler } from "../utils/asyncHandler";
+
+const router = express.Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Reports
+ *   description: Monthly reports and analytics
+ */
+
+/**
+ * @swagger
+ * /api/reports/monthly:
+ *   get:
+ *     summary: Get monthly report (mesh, sales, wire usage)
+ *     tags: [Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: month
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: 2025-04
+ *         description: Target month in YYYY-MM format
+ *     responses:
+ *       200:
+ *         description: Monthly report
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 month: { type: string }
+ *                 totalMeshProduced: { type: integer }
+ *                 wireUsedKg: { type: number }
+ *                 totalSold: { type: integer }
+ *                 totalRevenue: { type: number }
+ *                 productionByEmployee:
+ *                   type: object
+ *                   additionalProperties: { type: integer }
+ *                 productionByType:
+ *                   type: object
+ *                   additionalProperties: { type: integer }
+ *                 salesByType:
+ *                   type: object
+ *                   additionalProperties: { type: integer }
+ *                 unsoldMesh:
+ *                   type: object
+ *                   additionalProperties: { type: integer }
+ *                 topClients:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name: { type: string }
+ *                       totalSpent: { type: number }
+ *                 invoices:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: integer }
+ *                       total: { type: number }
+ *                       createdAt: { type: string, format: date-time }
+ *                       client:
+ *                         type: object
+ *                         properties:
+ *                           id: { type: integer }
+ *                           name: { type: string }
+ *                       employee:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           id: { type: integer }
+ *                           name: { type: string }
+ *                       items:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             meshType: { type: string }
+ *                             quantity: { type: integer }
+ *                             unitPrice: { type: number }
+ */
+
+/**
+ * @swagger
+ * /api/reports/monthly/pdf:
+ *   get:
+ *     summary: Download monthly report as PDF
+ *     tags: [Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: month
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: 2025-04
+ *         description: Month to generate PDF for
+ *     responses:
+ *       200:
+ *         description: PDF generated
+ *         content:
+ *           application/pdf:
+ *             schema:
+ *               type: string
+ *               format: binary
+ */
+
+/**
+ * @swagger
+ * /api/reports/monthly/export:
+ *   get:
+ *     summary: Export monthly report to Excel
+ *     tags: [Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: month
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: 2025-04
+ *         description: Month to export as Excel
+ *     responses:
+ *       200:
+ *         description: Excel file exported
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema:
+ *               type: string
+ *               format: binary
+ */
+
+router.get(
+  "/monthly",
+  verifyToken,
+  requireOwner,
+  asyncHandler(getMonthlyReport)
+);
+
+router.get(
+  "/monthly/pdf",
+  verifyToken,
+  requireOwner,
+  asyncHandler(generateMonthlyPdfReport)
+);
+
+router.get(
+  "/monthly/export",
+  verifyToken,
+  requireOwner,
+  asyncHandler(
+    async (req: Request<{}, {}, {}, { month: string }>, res: Response) => {
+      const month = req.query.month;
+      if (!month) {
+        return res
+          .status(400)
+          .json({ error: "Query param 'month' is required" });
+      }
+
+      const report = await getMonthlyData(month);
+      await exportMonthlyReportToExcel(report, res);
+    }
+  )
+);
+
+export default router;
+
+
+--- File: src\routes\wire.routes.ts ---
+import express from "express";
+import {
+  addWire,
+  getAllWire,
+  updateWire,
+  deleteWire,
+  getAvailableWire,
+} from "../controllers/wire.controller";
+import { verifyToken, requireOwner } from "../middleware/auth.middleware";
+import { asyncHandler } from "../utils/asyncHandler";
+
+const router = express.Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Wire
+ *   description: Wire Inventory Management
+ */
+
+/**
+ * @swagger
+ * /api/wire:
+ *   get:
+ *     summary: Get all wire entries
+ *     tags: [Wire]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of wire stock
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                   type:
+ *                     type: string
+ *                   diameter:
+ *                     type: string
+ *                   quantityKg:
+ *                     type: number
+ *                   pricePerKg:
+ *                     type: number
+ *                   supplier:
+ *                     type: string
+ *                   createdAt:
+ *                     type: string
+ *                     format: date-time
+ */
+/**
+ * @swagger
+ * /api/wire/create:
+ *   post:
+ *     summary: Add new wire stock
+ *     tags: [Wire]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [type, diameter, quantityKg, pricePerKg, supplier]
+ *             properties:
+ *               type:
+ *                 type: string
+ *               diameter:
+ *                 type: string
+ *               quantityKg:
+ *                 type: number
+ *               pricePerKg:
+ *                 type: number
+ *               supplier:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Wire added
+ */
+
+/**
+ * @swagger
+ * /api/wire/update/{id}:
+ *   put:
+ *     summary: Update wire entry
+ *     tags: [Wire]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               type:
+ *                 type: string
+ *               diameter:
+ *                 type: string
+ *               quantityKg:
+ *                 type: number
+ *               pricePerKg:
+ *                 type: number
+ *               supplier:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Wire updated
+ */
+
+/**
+ * @swagger
+ * /api/wire/delete/{id}:
+ *   delete:
+ *     summary: Delete wire entry
+ *     tags: [Wire]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Wire deleted
+ */
+
+/**
+ * @swagger
+ * /api/wire/available:
+ *   get:
+ *     summary: Get all available wire (by type, diameter)
+ *     tags: [Wire]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of available wire stock
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                   type:
+ *                     type: string
+ *                   diameter:
+ *                     type: string
+ *                   quantityKg:
+ *                     type: number
+ *                   pricePerKg:
+ *                     type: number
+ *                   supplier:
+ *                     type: string
+ *                   createdAt:
+ *                     type: string
+ *                     format: date-time
+ */
+
+// 👇 Route definitions
+router.get("/available", verifyToken, asyncHandler(getAvailableWire));
+router.get("/", verifyToken, asyncHandler(getAllWire));
+router.post("/create", verifyToken, requireOwner, asyncHandler(addWire));
+router.put("/update/:id", verifyToken, requireOwner, asyncHandler(updateWire));
+router.delete(
+  "/delete/:id",
+  verifyToken,
+  requireOwner,
+  asyncHandler(deleteWire)
+);
+
+export default router;
+
+
+--- File: src\utils\asyncHandler.ts ---
+import { Request, Response, NextFunction } from "express";
+
+export const asyncHandler =
+  (fn: Function) => (req: Request, res: Response, next: NextFunction) =>
+    Promise.resolve(fn(req, res, next)).catch(next);
+
+
+--- File: src\utils\excelExporter.ts ---
+import ExcelJS from "exceljs";
+import { Response } from "express";
+
+export const exportMonthlyReportToExcel = async (
+  report: any,
+  res: Response
+) => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Monthly Report");
+
+  sheet.columns = [
+    { header: "Metric", key: "metric", width: 30 },
+    { header: "Value", key: "value", width: 50 },
+  ];
+
+  sheet.addRows([
+    { metric: "Month", value: report.month },
+    { metric: "Total Mesh Produced", value: report.totalMeshProduced },
+    { metric: "Wire Used (kg)", value: report.wireUsedKg },
+    { metric: "Total Sold", value: report.totalSold },
+    { metric: "Total Revenue", value: report.totalRevenue },
+  ]);
+
+  sheet.addRow([]);
+  sheet.addRow({ metric: "Top Clients", value: "" });
+
+  report.topClients.forEach((client: any) => {
+    sheet.addRow({ metric: client.name, value: client.totalSpent });
+  });
+
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename=report-${report.month}.xlsx`
+  );
+  await workbook.xlsx.write(res);
+  res.end();
+};
+
+
+--- File: src\utils\token.ts ---
+import jwt from "jsonwebtoken";
+
+export const generateToken = (id: number, role: string) => {
+  return jwt.sign({ id, role }, process.env.JWT_SECRET as string, {
+    expiresIn: "7d",
+  });
+};
+
+
+--- File: tsconfig.json ---
+{
+  "compilerOptions": {
+    /* Visit https://aka.ms/tsconfig to read more about this file */
+    /* Projects */
+    // "incremental": true,                              /* Save .tsbuildinfo files to allow for incremental compilation of projects. */
+    // "composite": true,                                /* Enable constraints that allow a TypeScript project to be used with project references. */
+    // "tsBuildInfoFile": "./.tsbuildinfo",              /* Specify the path to .tsbuildinfo incremental compilation file. */
+    // "disableSourceOfProjectReferenceRedirect": true,  /* Disable preferring source files instead of declaration files when referencing composite projects. */
+    // "disableSolutionSearching": true,                 /* Opt a project out of multi-project reference checking when editing. */
+    // "disableReferencedProjectLoad": true,             /* Reduce the number of projects loaded automatically by TypeScript. */
+    /* Language and Environment */
+    "target": "ES6", /* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */
+    // "lib": [],                                        /* Specify a set of bundled library declaration files that describe the target runtime environment. */
+    // "jsx": "preserve",                                /* Specify what JSX code is generated. */
+    // "libReplacement": true,                           /* Enable lib replacement. */
+    // "experimentalDecorators": true,                   /* Enable experimental support for legacy experimental decorators. */
+    // "emitDecoratorMetadata": true,                    /* Emit design-type metadata for decorated declarations in source files. */
+    // "jsxFactory": "",                                 /* Specify the JSX factory function used when targeting React JSX emit, e.g. 'React.createElement' or 'h'. */
+    // "jsxFragmentFactory": "",                         /* Specify the JSX Fragment reference used for fragments when targeting React JSX emit e.g. 'React.Fragment' or 'Fragment'. */
+    // "jsxImportSource": "",                            /* Specify module specifier used to import the JSX factory functions when using 'jsx: react-jsx*'. */
+    // "reactNamespace": "",                             /* Specify the object invoked for 'createElement'. This only applies when targeting 'react' JSX emit. */
+    // "noLib": true,                                    /* Disable including any library files, including the default lib.d.ts. */
+    // "useDefineForClassFields": true,                  /* Emit ECMAScript-standard-compliant class fields. */
+    // "moduleDetection": "auto",                        /* Control what method is used to detect module-format JS files. */
+    /* Modules */
+    "module": "commonjs", /* Specify what module code is generated. */
+    // "rootDir": "./",                                  /* Specify the root folder within your source files. */
+    "moduleResolution": "node", /* Specify how TypeScript looks up a file from a given module specifier. */
+    // "baseUrl": "./",                                  /* Specify the base directory to resolve non-relative module names. */
+    // "paths": {},                                      /* Specify a set of entries that re-map imports to additional lookup locations. */
+    "rootDirs": [
+      "./src"
+    ], /* Allow multiple folders to be treated as one when resolving modules. */
+    "typeRoots": [
+      "./types",
+      "./node_modules/@types"
+    ], /* Specify multiple folders that act like './node_modules/@types'. */
+    // "types": [],                                      /* Specify type package names to be included without being referenced in a source file. */
+    // "allowUmdGlobalAccess": true,                     /* Allow accessing UMD globals from modules. */
+    // "moduleSuffixes": [],                             /* List of file name suffixes to search when resolving a module. */
+    // "allowImportingTsExtensions": true,               /* Allow imports to include TypeScript file extensions. Requires '--moduleResolution bundler' and either '--noEmit' or '--emitDeclarationOnly' to be set. */
+    // "rewriteRelativeImportExtensions": true,          /* Rewrite '.ts', '.tsx', '.mts', and '.cts' file extensions in relative import paths to their JavaScript equivalent in output files. */
+    // "resolvePackageJsonExports": true,                /* Use the package.json 'exports' field when resolving package imports. */
+    // "resolvePackageJsonImports": true,                /* Use the package.json 'imports' field when resolving imports. */
+    // "customConditions": [],                           /* Conditions to set in addition to the resolver-specific defaults when resolving imports. */
+    // "noUncheckedSideEffectImports": true,             /* Check side effect imports. */
+    // "resolveJsonModule": true,                        /* Enable importing .json files. */
+    // "allowArbitraryExtensions": true,                 /* Enable importing files with any extension, provided a declaration file is present. */
+    // "noResolve": true,                                /* Disallow 'import's, 'require's or '<reference>'s from expanding the number of files TypeScript should add to a project. */
+    /* JavaScript Support */
+    // "allowJs": true,                                  /* Allow JavaScript files to be a part of your program. Use the 'checkJS' option to get errors from these files. */
+    // "checkJs": true,                                  /* Enable error reporting in type-checked JavaScript files. */
+    // "maxNodeModuleJsDepth": 1,                        /* Specify the maximum folder depth used for checking JavaScript files from 'node_modules'. Only applicable with 'allowJs'. */
+    /* Emit */
+    // "declaration": true,                              /* Generate .d.ts files from TypeScript and JavaScript files in your project. */
+    // "declarationMap": true,                           /* Create sourcemaps for d.ts files. */
+    // "emitDeclarationOnly": true,                      /* Only output d.ts files and not JavaScript files. */
+    // "sourceMap": true,                                /* Create source map files for emitted JavaScript files. */
+    // "inlineSourceMap": true,                          /* Include sourcemap files inside the emitted JavaScript. */
+    // "noEmit": true,                                   /* Disable emitting files from a compilation. */
+    // "outFile": "./",                                  /* Specify a file that bundles all outputs into one JavaScript file. If 'declaration' is true, also designates a file that bundles all .d.ts output. */
+    "outDir": "./dist", /* Specify an output folder for all emitted files. */
+    // "removeComments": true,                           /* Disable emitting comments. */
+    // "importHelpers": true,                            /* Allow importing helper functions from tslib once per project, instead of including them per-file. */
+    // "downlevelIteration": true,                       /* Emit more compliant, but verbose and less performant JavaScript for iteration. */
+    // "sourceRoot": "",                                 /* Specify the root path for debuggers to find the reference source code. */
+    // "mapRoot": "",                                    /* Specify the location where debugger should locate map files instead of generated locations. */
+    // "inlineSources": true,                            /* Include source code in the sourcemaps inside the emitted JavaScript. */
+    // "emitBOM": true,                                  /* Emit a UTF-8 Byte Order Mark (BOM) in the beginning of output files. */
+    // "newLine": "crlf",                                /* Set the newline character for emitting files. */
+    // "stripInternal": true,                            /* Disable emitting declarations that have '@internal' in their JSDoc comments. */
+    // "noEmitHelpers": true,                            /* Disable generating custom helper functions like '__extends' in compiled output. */
+    // "noEmitOnError": true,                            /* Disable emitting files if any type checking errors are reported. */
+    // "preserveConstEnums": true,                       /* Disable erasing 'const enum' declarations in generated code. */
+    // "declarationDir": "./",                           /* Specify the output directory for generated declaration files. */
+    /* Interop Constraints */
+    // "isolatedModules": true,                          /* Ensure that each file can be safely transpiled without relying on other imports. */
+    // "verbatimModuleSyntax": true,                     /* Do not transform or elide any imports or exports not marked as type-only, ensuring they are written in the output file's format based on the 'module' setting. */
+    // "isolatedDeclarations": true,                     /* Require sufficient annotation on exports so other tools can trivially generate declaration files. */
+    // "erasableSyntaxOnly": true,                       /* Do not allow runtime constructs that are not part of ECMAScript. */
+    // "allowSyntheticDefaultImports": true,             /* Allow 'import x from y' when a module doesn't have a default export. */
+    "esModuleInterop": true, /* Emit additional JavaScript to ease support for importing CommonJS modules. This enables 'allowSyntheticDefaultImports' for type compatibility. */
+    // "preserveSymlinks": true,                         /* Disable resolving symlinks to their realpath. This correlates to the same flag in node. */
+    "forceConsistentCasingInFileNames": true, /* Ensure that casing is correct in imports. */
+    /* Type Checking */
+    "strict": true, /* Enable all strict type-checking options. */
+    // "noImplicitAny": true,                            /* Enable error reporting for expressions and declarations with an implied 'any' type. */
+    // "strictNullChecks": true,                         /* When type checking, take into account 'null' and 'undefined'. */
+    // "strictFunctionTypes": true,                      /* When assigning functions, check to ensure parameters and the return values are subtype-compatible. */
+    // "strictBindCallApply": true,                      /* Check that the arguments for 'bind', 'call', and 'apply' methods match the original function. */
+    // "strictPropertyInitialization": true,             /* Check for class properties that are declared but not set in the constructor. */
+    // "strictBuiltinIteratorReturn": true,              /* Built-in iterators are instantiated with a 'TReturn' type of 'undefined' instead of 'any'. */
+    // "noImplicitThis": true,                           /* Enable error reporting when 'this' is given the type 'any'. */
+    // "useUnknownInCatchVariables": true,               /* Default catch clause variables as 'unknown' instead of 'any'. */
+    // "alwaysStrict": true,                             /* Ensure 'use strict' is always emitted. */
+    // "noUnusedLocals": true,                           /* Enable error reporting when local variables aren't read. */
+    // "noUnusedParameters": true,                       /* Raise an error when a function parameter isn't read. */
+    // "exactOptionalPropertyTypes": true,               /* Interpret optional property types as written, rather than adding 'undefined'. */
+    // "noImplicitReturns": true,                        /* Enable error reporting for codepaths that do not explicitly return in a function. */
+    // "noFallthroughCasesInSwitch": true,               /* Enable error reporting for fallthrough cases in switch statements. */
+    // "noUncheckedIndexedAccess": true,                 /* Add 'undefined' to a type when accessed using an index. */
+    // "noImplicitOverride": true,                       /* Ensure overriding members in derived classes are marked with an override modifier. */
+    // "noPropertyAccessFromIndexSignature": true,       /* Enforces using indexed accessors for keys declared using an indexed type. */
+    // "allowUnusedLabels": true,                        /* Disable error reporting for unused labels. */
+    // "allowUnreachableCode": true,                     /* Disable error reporting for unreachable code. */
+    /* Completeness */
+    // "skipDefaultLibCheck": true,                      /* Skip type checking .d.ts files that are included with TypeScript. */
+    "skipLibCheck": true /* Skip type checking all .d.ts files. */
+  },
+  "include": [
+    "src",
+    "types",
+    "scripts"
+  ]
+}
+
+--- File: types\express.d.ts ---
+import { Request } from "express";
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: number;
+        role: string;
+      };
+    }
+  }
+}
+export {};

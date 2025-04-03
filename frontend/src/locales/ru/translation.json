@@ -1,0 +1,12 @@
+{
+  "dashboard": "Панель управления",
+  "wire": "Проволока",
+  "mesh": "Сетка",
+  "clients": "Клиенты",
+  "invoices": "Счета",
+  "employees": "Сотрудники",
+  "expenses": "Расходы",
+  "machines": "Машины",
+  "reports": "Отчеты",
+  "settings": "Настройки"
+}

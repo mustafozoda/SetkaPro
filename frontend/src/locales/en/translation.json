@@ -1,0 +1,12 @@
+{
+  "dashboard": "Dashboard",
+  "wire": "Wire",
+  "mesh": "Mesh",
+  "clients": "Clients",
+  "invoices": "Invoices",
+  "employees": "Employees",
+  "expenses": "Expenses",
+  "machines": "Machines",
+  "reports": "Reports",
+  "settings": "Settings"
+}
