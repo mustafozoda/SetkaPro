@@ -7,80 +7,164 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  OWNER
+  MANAGER
+  WORKER
+  DRIVER
+  COOK
+}
+
 model User {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(uuid())
   name      String
   email     String   @unique
+  phone     String
+  address   String
   password  String
-  role      String // OWNER, EMPLOYEE
+  role      Role
   createdAt DateTime @default(now())
-}
 
-model Employee {
-  id         Int              @id @default(autoincrement())
-  name       String
-  role       String
-  salary     Float
-  createdAt  DateTime         @default(now())
-
-  productions MeshProduction[] @relation("MeshEmployee")
-  invoices    Invoice[]        @relation("EmployeeInvoices")
-}
-model Wire {
-  id         Int      @id @default(autoincrement())
-  type       String
-  diameter   String
-  quantityKg Float
-  pricePerKg Float
-  supplier   String
-  createdAt  DateTime @default(now())
-}
-model MeshProduction {
-  id            Int       @id @default(autoincrement())
-  meshType      String
-  wireDiameter  String     // added for tracking
-  quantity      Int
-  wireUsedKg    Float
-  employeeId    Int
-
-  // ✅ Match relation name here
-  employee      Employee  @relation("MeshEmployee", fields: [employeeId], references: [id])
-  createdAt     DateTime  @default(now())
+  productions  Production[]
+  invoicesSold Invoice[]     @relation("SellerInvoices")
+  salaries     Salary[]
+  machineLogs  MachineLog[]
+  activityLogs ActivityLog[]
 }
 
 model Client {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(uuid())
   name      String
+  email     String?
   phone     String?
   address   String?
   createdAt DateTime @default(now())
 
-  // Relations
-  invoices Invoice[] @relation("ClientInvoices")
+  invoices Invoice[]
+}
+
+model MeshType {
+  id             String   @id @default(uuid())
+  type           String // e.g. "10x10"
+  form           String? // optional, like "roll" or "sheet"
+  wireType       String // e.g. "3mm"
+  weightPerPiece Float // kg per mesh piece
+  priceForClient Float
+  priceForWorker Float
+  currentStock   Int      @default(0) // dynamic stock tracking
+  stockThreshold Int      @default(0) // alert if low
+  createdAt      DateTime @default(now())
+
+  productions Production[]
+  invoices    Invoice[]
+}
+
+model Wire {
+  id         String   @id @default(uuid())
+  wireType   String // e.g. "3mm"
+  quantityKg Float
+  usedKg     Float    @default(0)
+  createdAt  DateTime @default(now())
+}
+
+model Production {
+  id         String   @id @default(uuid())
+  userId     String
+  meshTypeId String
+  quantity   Int
+  startedAt  DateTime
+  finishedAt DateTime
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id])
+  meshType MeshType @relation(fields: [meshTypeId], references: [id])
 }
 
 model Invoice {
-  id        Int      @id @default(autoincrement())
-  total     Float
-  createdAt DateTime @default(now())
+  id           String   @id @default(uuid())
+  clientId     String
+  sellerId     String
+  meshTypeId   String
+  quantity     Int
+  pricePerUnit Float
+  total        Float
+  amountPaid   Float    @default(0)
+  isPaid       Boolean  @default(false)
+  dueAmount    Float    @default(0)
+  createdAt    DateTime @default(now())
 
-  // Relations
-  clientId Int
-  client   Client @relation("ClientInvoices", fields: [clientId], references: [id])
-
-  employeeId Int?
-  employee   Employee? @relation("EmployeeInvoices", fields: [employeeId], references: [id])
-
-  items SaleItem[] @relation("InvoiceItems")
+  client     Client       @relation(fields: [clientId], references: [id])
+  seller     User         @relation("SellerInvoices", fields: [sellerId], references: [id])
+  meshType   MeshType     @relation(fields: [meshTypeId], references: [id])
+  PaymentLog PaymentLog[]
 }
 
-model SaleItem {
-  id        Int    @id @default(autoincrement())
-  meshType  String
-  quantity  Int
-  unitPrice Float
+model Salary {
+  id        String   @id @default(uuid())
+  userId    String
+  month     String // e.g. "2025-04"
+  amount    Float
+  paid      Boolean  @default(false)
+  createdAt DateTime @default(now())
 
-  // Relations
-  invoiceId Int
-  invoice   Invoice @relation("InvoiceItems", fields: [invoiceId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Finance {
+  id          String   @id @default(uuid())
+  type        String // "income", "expense"
+  category    String // "wire", "salary", "sale", etc.
+  amount      Float
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+model Machine {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  inUse       Boolean   @default(false)
+  lastUsed    DateTime?
+  createdAt   DateTime  @default(now())
+
+  logs MachineLog[]
+}
+
+model MachineLog {
+  id        String    @id @default(uuid())
+  machineId String
+  userId    String?
+  startedAt DateTime
+  endedAt   DateTime?
+
+  machine Machine @relation(fields: [machineId], references: [id])
+  user    User?   @relation(fields: [userId], references: [id])
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  module    String // e.g. "Invoice", "Mesh", etc.
+  details   String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Localization {
+  id        String   @id @default(uuid())
+  key       String
+  en        String
+  ru        String
+  createdAt DateTime @default(now())
+}
+
+model PaymentLog {
+  id        String   @id @default(uuid())
+  invoiceId String
+  amount    Float
+  paidAt    DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
 }

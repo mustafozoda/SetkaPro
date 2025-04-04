@@ -2,17 +2,18 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { BrowserRouter } from "react-router-dom";
-import { useTheme } from "./stores/useTheme"; // Zustand for theme
-import { useAuth } from "./stores/useAuth"; // Zustand for auth
-import "./index.css"; // Tailwind styles
-import "./locales/i18n"; // i18n config
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+import { useTheme } from "./stores/useTheme";
+// import { useAuth } from "./stores/useAuth";
+import "./index.css";
+import "./locales/i18n";
+
+const queryClient = new QueryClient();
 
 function AppWrapper() {
-  // Initialize Zustand stores
-  const { theme } = useTheme(); // Access the theme from Zustand
-  const { user } = useAuth(); // Access the user (auth state) from Zustand
-
-  // You can add logic here for dark mode classes, etc., if necessary
+  const { theme } = useTheme();
+  // const { user } = useAuth(); // optional unless used
 
   return (
     <div className={`App ${theme === "dark" ? "dark" : ""}`}>
@@ -23,8 +24,10 @@ function AppWrapper() {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <AppWrapper />
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <AppWrapper />
+      </BrowserRouter>
+    </QueryClientProvider>
   </React.StrictMode>
 );

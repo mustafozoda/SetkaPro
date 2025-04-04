@@ -1,188 +1,99 @@
-import express from "express";
+import { Router } from "express";
 import {
-  addWire,
-  getAllWire,
-  updateWire,
+  createWire,
+  getAllWires,
+  getWireBalanceByType,
   deleteWire,
-  getAvailableWire,
 } from "../controllers/wire.controller";
-import { verifyToken, requireOwner } from "../middleware/auth.middleware";
-import { asyncHandler } from "../utils/asyncHandler";
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
 
-const router = express.Router();
+const router = Router();
 
 /**
  * @swagger
  * tags:
  *   name: Wire
- *   description: Wire Inventory Management
+ *   description: Manage imported wires by kg
  */
+
+router.use(authenticate);
 
 /**
  * @swagger
- * /api/wire:
+ * /api/wires:
+ *   post:
+ *     summary: Import new wire
+ *     tags: [Wire]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [wireType, quantityKg]
+ *             properties:
+ *               wireType:
+ *                 type: string
+ *               quantityKg:
+ *                 type: number
+ *     responses:
+ *       201:
+ *         description: Wire entry created
+ */
+router.post("/", authorize([Role.OWNER]), createWire);
+
+/**
+ * @swagger
+ * /api/wires:
  *   get:
- *     summary: Get all wire entries
+ *     summary: List all wire imports
  *     tags: [Wire]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: List of wire stock
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id:
- *                     type: integer
- *                   type:
- *                     type: string
- *                   diameter:
- *                     type: string
- *                   quantityKg:
- *                     type: number
- *                   pricePerKg:
- *                     type: number
- *                   supplier:
- *                     type: string
- *                   createdAt:
- *                     type: string
- *                     format: date-time
+ *         description: List of wire imports
  */
-/**
- * @swagger
- * /api/wire/create:
- *   post:
- *     summary: Add new wire stock
- *     tags: [Wire]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [type, diameter, quantityKg, pricePerKg, supplier]
- *             properties:
- *               type:
- *                 type: string
- *               diameter:
- *                 type: string
- *               quantityKg:
- *                 type: number
- *               pricePerKg:
- *                 type: number
- *               supplier:
- *                 type: string
- *     responses:
- *       201:
- *         description: Wire added
- */
+router.get("/", authorize([Role.OWNER, Role.MANAGER]), getAllWires);
 
 /**
  * @swagger
- * /api/wire/update/{id}:
- *   put:
- *     summary: Update wire entry
+ * /api/wires/balance/{wireType}:
+ *   get:
+ *     summary: Get remaining kg for a wire type
  *     tags: [Wire]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
+ *       - name: wireType
+ *         in: path
  *         required: true
  *         schema:
- *           type: integer
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               type:
- *                 type: string
- *               diameter:
- *                 type: string
- *               quantityKg:
- *                 type: number
- *               pricePerKg:
- *                 type: number
- *               supplier:
- *                 type: string
+ *           type: string
  *     responses:
  *       200:
- *         description: Wire updated
+ *         description: Remaining kg
  */
+router.get("/balance/:wireType", authorize([Role.OWNER]), getWireBalanceByType);
 
 /**
  * @swagger
- * /api/wire/delete/{id}:
+ * /api/wires/{id}:
  *   delete:
  *     summary: Delete wire entry
  *     tags: [Wire]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
+ *       - name: id
+ *         in: path
  *         required: true
- *         schema:
- *           type: integer
  *     responses:
- *       200:
- *         description: Wire deleted
+ *       204:
+ *         description: Deleted
  */
-
-/**
- * @swagger
- * /api/wire/available:
- *   get:
- *     summary: Get all available wire (by type, diameter)
- *     tags: [Wire]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of available wire stock
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id:
- *                     type: integer
- *                   type:
- *                     type: string
- *                   diameter:
- *                     type: string
- *                   quantityKg:
- *                     type: number
- *                   pricePerKg:
- *                     type: number
- *                   supplier:
- *                     type: string
- *                   createdAt:
- *                     type: string
- *                     format: date-time
- */
-
-// 👇 Route definitions
-router.get("/available", verifyToken, asyncHandler(getAvailableWire));
-router.get("/", verifyToken, asyncHandler(getAllWire));
-router.post("/create", verifyToken, requireOwner, asyncHandler(addWire));
-router.put("/update/:id", verifyToken, requireOwner, asyncHandler(updateWire));
-router.delete(
-  "/delete/:id",
-  verifyToken,
-  requireOwner,
-  asyncHandler(deleteWire)
-);
+router.delete("/:id", authorize([Role.OWNER]), deleteWire);
 
 export default router;

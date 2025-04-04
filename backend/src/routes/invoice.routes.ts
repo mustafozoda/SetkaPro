@@ -1,142 +1,196 @@
-import express from "express";
+import { Router } from "express";
 import {
   createInvoice,
-  getInvoices,
-  updateInvoice,
+  getAllInvoices,
+  getInvoiceById,
+  deleteInvoice,
+  updateInvoicePayment,
+  generateInvoicePDFRoute,
+  sendInvoiceByEmail,
 } from "../controllers/invoice.controller";
-import { verifyToken } from "../middleware/auth.middleware";
-import { asyncHandler } from "../utils/asyncHandler";
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
 
-const router = express.Router();
+const router = Router();
 
 /**
  * @swagger
  * tags:
  *   name: Invoices
- *   description: Manage sales/invoicing system
+ *   description: Manage mesh sales and invoices
  */
+
+router.use(authenticate);
+
+/**
+ * @swagger
+ * /api/invoices:
+ *   post:
+ *     summary: Create a new invoice
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [clientId, meshTypeId, quantity, pricePerUnit]
+ *             properties:
+ *               clientId:
+ *                 type: string
+ *               meshTypeId:
+ *                 type: string
+ *               quantity:
+ *                 type: number
+ *               pricePerUnit:
+ *                 type: number
+ *               amountPaid:
+ *                 type: number
+ *     responses:
+ *       201:
+ *         description: Invoice created
+ */
+router.post(
+  "/",
+  authorize([Role.WORKER, Role.MANAGER, Role.OWNER]),
+  createInvoice
+);
 
 /**
  * @swagger
  * /api/invoices:
  *   get:
- *     summary: List all invoices
+ *     summary: Get all invoices
  *     tags: [Invoices]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: month
- *         schema: { type: string, example: "2025-04" }
- *         description: Filter by month (YYYY-MM)
- *       - in: query
- *         name: clientId
- *         schema: { type: integer }
- *         description: Filter by client ID
  *     responses:
  *       200:
- *         description: List of invoices
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id: { type: integer }
- *                   total: { type: number }
- *                   createdAt:
- *                     type: string
- *                     format: date-time
- *                   client:
- *                     type: object
- *                     properties:
- *                       id: { type: integer }
- *                       name: { type: string }
- *                   employee:
- *                     type: object
- *                     nullable: true
- *                     properties:
- *                       id: { type: integer }
- *                       name: { type: string }
- *                   items:
- *                     type: array
- *                     items:
- *                       type: object
- *                       properties:
- *                         meshType: { type: string }
- *                         quantity: { type: integer }
- *                         unitPrice: { type: number }
+ *         description: List of all invoices
  */
+router.get("/", authorize([Role.MANAGER, Role.OWNER]), getAllInvoices);
 
 /**
  * @swagger
- * /api/invoices/create:
- *   post:
- *     summary: Create new invoice
- *     tags: [Invoices]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [clientId, items]
- *             properties:
- *               clientId: { type: integer }
- *               employeeId: { type: integer }
- *               items:
- *                 type: array
- *                 items:
- *                   type: object
- *                   required: [meshType, quantity, unitPrice]
- *                   properties:
- *                     meshType: { type: string }
- *                     quantity: { type: integer }
- *                     unitPrice: { type: number }
- *     responses:
- *       201:
- *         description: Invoice created
- */
-
-/**
- * @swagger
- * /api/invoices/update/{id}:
- *   put:
- *     summary: Update existing invoice
+ * /api/invoices/{id}:
+ *   get:
+ *     summary: Get invoice by ID
  *     tags: [Invoices]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
+ *       - name: id
+ *         in: path
  *         required: true
- *         schema: { type: integer }
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Invoice details
+ */
+router.get("/:id", authorize([Role.MANAGER, Role.OWNER]), getInvoiceById);
+
+/**
+ * @swagger
+ * /api/invoices/{id}:
+ *   delete:
+ *     summary: Delete an invoice
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: Invoice deleted
+ */
+router.delete("/:id", authorize([Role.OWNER]), deleteInvoice);
+
+/**
+ * @swagger
+ * /api/invoices/{id}/pay:
+ *   patch:
+ *     summary: Add payment to an invoice
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
  *     requestBody:
- *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [items]
+ *             required: [amount]
  *             properties:
- *               items:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     meshType: { type: string }
- *                     quantity: { type: integer }
- *                     unitPrice: { type: number }
+ *               amount:
+ *                 type: number
  *     responses:
  *       200:
  *         description: Invoice updated
  */
+router.patch(
+  "/:id/pay",
+  authorize([Role.MANAGER, Role.OWNER]),
+  updateInvoicePayment
+);
 
-router.post("/create", verifyToken, asyncHandler(createInvoice));
-router.get("/", verifyToken, asyncHandler(getInvoices));
-router.put("/update/:id", verifyToken, asyncHandler(updateInvoice));
+/**
+ * @swagger
+ * /api/invoices/{id}/pdf:
+ *   get:
+ *     summary: Download invoice as PDF
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Returns PDF file
+ */
+router.get(
+  "/:id/pdf",
+  authorize([Role.MANAGER, Role.OWNER]),
+  generateInvoicePDFRoute
+);
+
+/**
+ * @swagger
+ * /api/invoices/{id}/email:
+ *   post:
+ *     summary: Send invoice to client via email
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Email sent
+ */
+router.post(
+  "/:id/email",
+  authorize([Role.MANAGER, Role.OWNER]),
+  sendInvoiceByEmail
+);
 
 export default router;

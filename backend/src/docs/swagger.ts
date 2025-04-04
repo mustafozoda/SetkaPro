@@ -1,17 +1,19 @@
+// docs/swagger.ts
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 
-const options = {
+const options: swaggerJsdoc.Options = {
   definition: {
     openapi: "3.0.0",
     info: {
-      title: "SetkaPro API",
+      title: "Factory Management API",
       version: "1.0.0",
-      description: "API documentation for SetkaPro system",
+      description:
+        "Mesh production, payroll, inventory, and client management system",
     },
     servers: [
       {
-        url: "http://localhost:3001",
+        url: "http://localhost:3000",
         description: "Local server",
       },
     ],
@@ -29,6 +31,6 @@ const options = {
   apis: ["./src/routes/*.ts"],
 };
 
-const specs = swaggerJsdoc(options);
+const swaggerSpec = swaggerJsdoc(options);
 
-export { swaggerUi, specs };
+export { swaggerUi, swaggerSpec };

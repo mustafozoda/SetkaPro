@@ -14,13 +14,13 @@ export default function SidebarUI({
   items: { label: string; icon: any; to: string }[];
   activePath: string;
   onNavigate: (to: string) => void;
-  theme: "dark" | "light"; // Accept theme prop
+  theme: "dark" | "light";
 }) {
   return (
     <aside
       className={cn(
-        "h-full border-r transition-all duration-300 ease-in-out",
-        theme === "dark" ? "bg-gray-800 text-white" : "bg-white text-gray-900", // Apply dynamic theme-based styling
+        "h-full border-r  transition-all ease-in-out",
+        theme === "dark" ? "bg-[#171717] text-white" : "bg-white text-gray-900",
         collapsed ? "w-[60px]" : "w-[220px]"
       )}
     >

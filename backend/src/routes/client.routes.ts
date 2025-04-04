@@ -1,56 +1,28 @@
-import express from "express";
+import { Router } from "express";
 import {
   createClient,
   getAllClients,
+  getClientById,
   updateClient,
   deleteClient,
 } from "../controllers/client.controller";
-import { verifyToken } from "../middleware/auth.middleware";
-import { asyncHandler } from "../utils/asyncHandler";
-
-const router = express.Router();
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
+console.log(Role.OWNER);
+const router = Router();
 
 /**
  * @swagger
  * tags:
  *   name: Clients
- *   description: Manage client data
+ *   description: Manage client database
  */
+
+router.use(authenticate);
 
 /**
  * @swagger
  * /api/clients:
- *   get:
- *     summary: Get all clients
- *     tags: [Clients]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of clients
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id:
- *                     type: integer
- *                   name:
- *                     type: string
- *                   phone:
- *                     type: string
- *                   address:
- *                     type: string
- *                   createdAt:
- *                     type: string
- *                     format: date-time
- */
-
-/**
- * @swagger
- * /api/clients/create:
  *   post:
  *     summary: Add a new client
  *     tags: [Clients]
@@ -70,25 +42,62 @@ const router = express.Router();
  *                 type: string
  *               address:
  *                 type: string
+ *               email:
+ *                 type: string
  *     responses:
  *       201:
- *         description: Client created
+ *         description: Created client
  */
+router.post("/", authorize([Role.OWNER, Role.MANAGER]), createClient);
 
 /**
  * @swagger
- * /api/clients/update/{id}:
- *   put:
- *     summary: Update client info
+ * /api/clients:
+ *   get:
+ *     summary: Get all clients
+ *     tags: [Clients]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of clients
+ */
+router.get("/", authorize([Role.OWNER, Role.MANAGER]), getAllClients);
+
+/**
+ * @swagger
+ * /api/clients/{id}:
+ *   get:
+ *     summary: Get client by ID
  *     tags: [Clients]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
+ *       - name: id
+ *         in: path
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Client found
+ */
+router.get("/:id", authorize([Role.OWNER, Role.MANAGER]), getClientById);
+
+/**
+ * @swagger
+ * /api/clients/{id}:
+ *   put:
+ *     summary: Update client
+ *     tags: [Clients]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
  *     requestBody:
  *       required: true
  *       content:
@@ -102,33 +111,32 @@ const router = express.Router();
  *                 type: string
  *               address:
  *                 type: string
+ *               email:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Client updated
  */
+router.put("/:id", authorize([Role.OWNER, Role.MANAGER]), updateClient);
 
 /**
  * @swagger
- * /api/clients/delete/{id}:
+ * /api/clients/{id}:
  *   delete:
- *     summary: Delete a client
+ *     summary: Delete client
  *     tags: [Clients]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
+ *       - name: id
+ *         in: path
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
  *     responses:
- *       200:
- *         description: Client deleted
+ *       204:
+ *         description: Deleted
  */
-
-router.post("/create", verifyToken, asyncHandler(createClient));
-router.get("/", verifyToken, asyncHandler(getAllClients));
-router.put("/update/:id", verifyToken, asyncHandler(updateClient));
-router.delete("/delete/:id", verifyToken, asyncHandler(deleteClient));
+router.delete("/:id", authorize([Role.OWNER, Role.MANAGER]), deleteClient);
 
 export default router;

@@ -1,3 +1,10 @@
+// import { useTranslation } from "react-i18next";
+import { DashboardContent } from "../../components/ui/DashboardContent";
+
 export default function Dashboard() {
-  return <div className="text-3xl font-bold">📊 Dashboard Page</div>;
+  return (
+    <div className=" py-5 mx-auto flex justify-center flex-col items-center ">
+      <DashboardContent />
+    </div>
+  );
 }

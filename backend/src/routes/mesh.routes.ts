@@ -1,53 +1,30 @@
-import express from "express";
-import { addMesh, getAllMesh } from "../controllers/mesh.controller";
-import { verifyToken } from "../middleware/auth.middleware";
-import { asyncHandler } from "../utils/asyncHandler";
+import { Router } from "express";
+import {
+  createMeshType,
+  getAllMeshTypes,
+  getMeshTypeById,
+  updateMeshType,
+  deleteMeshType,
+} from "../controllers/mesh.controller";
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
 
-const router = express.Router();
+const router = Router();
 
 /**
  * @swagger
  * tags:
  *   name: Mesh
- *   description: Mesh production tracking
+ *   description: Mesh types and pricing
  */
+
+router.use(authenticate);
 
 /**
  * @swagger
- * /api/mesh:
- *   get:
- *     summary: Get all mesh production records
- *     tags: [Mesh]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of mesh records
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id: { type: integer }
- *                   meshType: { type: string }
- *                   wireDiameter: { type: string }
- *                   quantity: { type: integer }
- *                   wireUsedKg: { type: number }
- *                   employee:
- *                     type: object
- *                     properties:
- *                       id: { type: integer }
- *                       name: { type: string }
- *                   createdAt: { type: string, format: date-time }
- */
-
-/**
- * @swagger
- * /api/mesh/create:
+ * /api/meshes:
  *   post:
- *     summary: Add a mesh production entry
+ *     summary: Create mesh type
  *     tags: [Mesh]
  *     security:
  *       - bearerAuth: []
@@ -57,26 +34,127 @@ const router = express.Router();
  *         application/json:
  *           schema:
  *             type: object
- *             required: [meshType, wireDiameter, quantity, wireUsedKg, employeeId]
+ *             required: [type, wireType, priceForClient, priceForWorker, weightPerPiece]
  *             properties:
- *               meshType:
+ *               type:
  *                 type: string
  *                 example: "10x10"
- *               wireDiameter:
+ *               form:
  *                 type: string
- *                 example: "6mm"
- *               quantity:
- *                 type: integer
- *               wireUsedKg:
+ *                 example: "roll"
+ *               wireType:
+ *                 type: string
+ *                 example: "3mm"
+ *               priceForClient:
  *                 type: number
- *               employeeId:
- *                 type: integer
+ *               priceForWorker:
+ *                 type: number
+ *               weightPerPiece:
+ *                 type: number
+ *               stockThreshold:
+ *                 type: number
  *     responses:
  *       201:
- *         description: Mesh entry created
+ *         description: Created mesh type
  */
+router.post("/", authorize([Role.OWNER]), createMeshType);
 
-router.get("/", verifyToken, asyncHandler(getAllMesh));
-router.post("/create", verifyToken, asyncHandler(addMesh));
+/**
+ * @swagger
+ * /api/meshes:
+ *   get:
+ *     summary: Get all mesh types
+ *     tags: [Mesh]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of mesh types
+ */
+router.get(
+  "/",
+  authorize([Role.OWNER, Role.MANAGER, Role.WORKER]),
+  getAllMeshTypes
+);
+
+/**
+ * @swagger
+ * /api/meshes/{id}:
+ *   get:
+ *     summary: Get mesh type by ID
+ *     tags: [Mesh]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Mesh type details
+ */
+router.get("/:id", authorize([Role.OWNER, Role.MANAGER]), getMeshTypeById);
+
+/**
+ * @swagger
+ * /api/meshes/{id}:
+ *   put:
+ *     summary: Update mesh type
+ *     tags: [Mesh]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               type:
+ *                 type: string
+ *               form:
+ *                 type: string
+ *               wireType:
+ *                 type: string
+ *               priceForClient:
+ *                 type: number
+ *               priceForWorker:
+ *                 type: number
+ *               weightPerPiece:
+ *                 type: number
+ *               currentStock:
+ *                 type: number
+ *               stockThreshold:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Updated mesh type
+ */
+router.put("/:id", authorize([Role.OWNER]), updateMeshType);
+
+/**
+ * @swagger
+ * /api/meshes/{id}:
+ *   delete:
+ *     summary: Delete mesh type
+ *     tags: [Mesh]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *     responses:
+ *       204:
+ *         description: Deleted
+ */
+router.delete("/:id", authorize([Role.OWNER]), deleteMeshType);
 
 export default router;

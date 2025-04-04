@@ -53,6 +53,7 @@ collectFiles(".");
 outputStream.end(() => {
   console.log(`✅ Code dump saved to ${outputFile}`);
 });
+// npx ts-node dump_all_codes.ts
 
 
 --- File: package.json ---
@@ -73,13 +74,14 @@ outputStream.end(() => {
     "@mrleebo/prisma-ast": "^0.12.1",
     "@prisma/client": "^6.5.0",
     "backend": "file:",
-    "bcryptjs": "^3.0.2",
+    "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.7",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.10.0",
     "pdfkit": "^0.16.0",
     "prisma": "^6.5.0",
     "swagger-jsdoc": "^6.2.8",
@@ -91,6 +93,7 @@ outputStream.end(() => {
     "@types/express": "^5.0.1",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.14.0",
+    "@types/nodemailer": "^6.4.17",
     "@types/pdfkit": "^0.13.9",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
@@ -111,82 +114,166 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  OWNER
+  MANAGER
+  WORKER
+  DRIVER
+  COOK
+}
+
 model User {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(uuid())
   name      String
   email     String   @unique
+  phone     String
+  address   String
   password  String
-  role      String // OWNER, EMPLOYEE
+  role      Role
   createdAt DateTime @default(now())
-}
 
-model Employee {
-  id         Int              @id @default(autoincrement())
-  name       String
-  role       String
-  salary     Float
-  createdAt  DateTime         @default(now())
-
-  productions MeshProduction[] @relation("MeshEmployee")
-  invoices    Invoice[]        @relation("EmployeeInvoices")
-}
-model Wire {
-  id         Int      @id @default(autoincrement())
-  type       String
-  diameter   String
-  quantityKg Float
-  pricePerKg Float
-  supplier   String
-  createdAt  DateTime @default(now())
-}
-model MeshProduction {
-  id            Int       @id @default(autoincrement())
-  meshType      String
-  wireDiameter  String     // added for tracking
-  quantity      Int
-  wireUsedKg    Float
-  employeeId    Int
-
-  // ✅ Match relation name here
-  employee      Employee  @relation("MeshEmployee", fields: [employeeId], references: [id])
-  createdAt     DateTime  @default(now())
+  productions  Production[]
+  invoicesSold Invoice[]     @relation("SellerInvoices")
+  salaries     Salary[]
+  machineLogs  MachineLog[]
+  activityLogs ActivityLog[]
 }
 
 model Client {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(uuid())
   name      String
+  email     String?
   phone     String?
   address   String?
   createdAt DateTime @default(now())
 
-  // Relations
-  invoices Invoice[] @relation("ClientInvoices")
+  invoices Invoice[]
+}
+
+model MeshType {
+  id             String   @id @default(uuid())
+  type           String // e.g. "10x10"
+  form           String? // optional, like "roll" or "sheet"
+  wireType       String // e.g. "3mm"
+  weightPerPiece Float // kg per mesh piece
+  priceForClient Float
+  priceForWorker Float
+  currentStock   Int      @default(0) // dynamic stock tracking
+  stockThreshold Int      @default(0) // alert if low
+  createdAt      DateTime @default(now())
+
+  productions Production[]
+  invoices    Invoice[]
+}
+
+model Wire {
+  id         String   @id @default(uuid())
+  wireType   String // e.g. "3mm"
+  quantityKg Float
+  usedKg     Float    @default(0)
+  createdAt  DateTime @default(now())
+}
+
+model Production {
+  id         String   @id @default(uuid())
+  userId     String
+  meshTypeId String
+  quantity   Int
+  startedAt  DateTime
+  finishedAt DateTime
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id])
+  meshType MeshType @relation(fields: [meshTypeId], references: [id])
 }
 
 model Invoice {
-  id        Int      @id @default(autoincrement())
-  total     Float
-  createdAt DateTime @default(now())
+  id           String   @id @default(uuid())
+  clientId     String
+  sellerId     String
+  meshTypeId   String
+  quantity     Int
+  pricePerUnit Float
+  total        Float
+  amountPaid   Float    @default(0)
+  isPaid       Boolean  @default(false)
+  dueAmount    Float    @default(0)
+  createdAt    DateTime @default(now())
 
-  // Relations
-  clientId Int
-  client   Client @relation("ClientInvoices", fields: [clientId], references: [id])
-
-  employeeId Int?
-  employee   Employee? @relation("EmployeeInvoices", fields: [employeeId], references: [id])
-
-  items SaleItem[] @relation("InvoiceItems")
+  client     Client       @relation(fields: [clientId], references: [id])
+  seller     User         @relation("SellerInvoices", fields: [sellerId], references: [id])
+  meshType   MeshType     @relation(fields: [meshTypeId], references: [id])
+  PaymentLog PaymentLog[]
 }
 
-model SaleItem {
-  id        Int    @id @default(autoincrement())
-  meshType  String
-  quantity  Int
-  unitPrice Float
+model Salary {
+  id        String   @id @default(uuid())
+  userId    String
+  month     String // e.g. "2025-04"
+  amount    Float
+  paid      Boolean  @default(false)
+  createdAt DateTime @default(now())
 
-  // Relations
-  invoiceId Int
-  invoice   Invoice @relation("InvoiceItems", fields: [invoiceId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Finance {
+  id          String   @id @default(uuid())
+  type        String // "income", "expense"
+  category    String // "wire", "salary", "sale", etc.
+  amount      Float
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+model Machine {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  inUse       Boolean   @default(false)
+  lastUsed    DateTime?
+  createdAt   DateTime  @default(now())
+
+  logs MachineLog[]
+}
+
+model MachineLog {
+  id        String    @id @default(uuid())
+  machineId String
+  userId    String?
+  startedAt DateTime
+  endedAt   DateTime?
+
+  machine Machine @relation(fields: [machineId], references: [id])
+  user    User?   @relation(fields: [userId], references: [id])
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  module    String // e.g. "Invoice", "Mesh", etc.
+  details   String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Localization {
+  id        String   @id @default(uuid())
+  key       String
+  en        String
+  ru        String
+  createdAt DateTime @default(now())
+}
+
+model PaymentLog {
+  id        String   @id @default(uuid())
+  invoiceId String
+  amount    Float
+  paidAt    DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
 }
 
 
@@ -251,631 +338,851 @@ console.log(jsonOutput);
 // npx ts-node scripts/parseSchema.ts
 
 
+--- File: src\app.ts ---
+import express from "express";
+import cors from "cors";
+import { errorHandler } from "./middleware/errorHandler";
+import authRoutes from "./routes/auth.routes";
+import userRoutes from "./routes/user.routes";
+import clientRoutes from "./routes/client.routes";
+import meshRoutes from "./routes/mesh.routes";
+import wireRoutes from "./routes/wire.routes";
+import productionRoutes from "./routes/production.routes";
+import invoiceRoutes from "./routes/invoice.routes";
+import salaryRoutes from "./routes/salary.routes";
+import machineRoutes from "./routes/machine.routes";
+import financeRoutes from "./routes/finance.routes";
+import reportRoutes from "./routes/report.routes";
+import localizationRoutes from "./routes/localization.routes";
+import { detectLanguage } from "./middleware/lang";
+import { swaggerUi, swaggerSpec } from "./docs/swagger";
+
+const app = express();
+
+// Middlewares
+app.use(cors());
+app.use(express.json());
+
+// Swagger
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/clients", clientRoutes);
+app.use("/api/meshes", meshRoutes);
+app.use("/api/wires", wireRoutes);
+app.use("/api/production", productionRoutes);
+app.use("/api/invoices", invoiceRoutes);
+app.use("/api/salaries", salaryRoutes);
+app.use("/api/machines", machineRoutes);
+app.use("/api/finance", financeRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/localization", localizationRoutes);
+
+app.use(detectLanguage);
+
+// Global error handler
+app.use(errorHandler);
+
+export default app;
+
+
+--- File: src\config\env.ts ---
+import dotenv from "dotenv";
+dotenv.config();
+
+function getEnv(key: string): string {
+  const value = process.env[key];
+  if (!value) throw new Error(`❌ ENV ${key} is not defined`);
+  return value;
+}
+
+export const ENV = {
+  PORT: Number(process.env.PORT || 5000),
+  JWT_SECRET: getEnv("JWT_SECRET"),
+  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || "7d",
+  EMAIL_FROM: getEnv("EMAIL_FROM"),
+  EMAIL_USER: getEnv("EMAIL_USER"),
+  EMAIL_PASS: getEnv("EMAIL_PASS"),
+};
+
+
+--- File: src\config\prisma.ts ---
+import { PrismaClient } from "@prisma/client";
+
+export const prisma = new PrismaClient();
+
+
 --- File: src\controllers\auth.controller.ts ---
-import { Request, Response } from "express";
-import prisma from "../prisma/client";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+import { Request, Response, NextFunction } from "express";
+import { loginUser, registerUser } from "../services/auth.service";
 
-export const register = async (req: Request, res: Response) => {
-  const { name, email, password, role } = req.body;
-
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) return res.status(400).json({ error: "Email already in use" });
-
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const user = await prisma.user.create({
-    data: {
-      name,
-      email,
-      password: hashedPassword,
-      role,
-    },
-  });
-
-  const token = jwt.sign(
-    { id: user.id, role: user.role },
-    process.env.JWT_SECRET!,
-    {
-      expiresIn: "7d",
-    }
-  );
-
-  res.status(201).json({
-    user: { id: user.id, name: user.name, role: user.role },
-    token,
-  });
+export const register = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const data = await registerUser(req.body);
+    res.status(201).json(data);
+  } catch (err) {
+    next(err);
+  }
 };
 
-export const login = async (req: Request, res: Response) => {
-  const { email, password } = req.body;
-
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) return res.status(401).json({ error: "Invalid credentials" });
-
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid) return res.status(401).json({ error: "Invalid credentials" });
-
-  const token = jwt.sign(
-    { id: user.id, role: user.role },
-    process.env.JWT_SECRET!,
-    {
-      expiresIn: "7d",
-    }
-  );
-
-  res.json({
-    user: { id: user.id, name: user.name, role: user.role },
-    token,
-  });
-};
-
-export const listUsers = async (req: Request, res: Response) => {
-  const { role, name } = req.query;
-
-  const users = await prisma.user.findMany({
-    where: {
-      ...(role && { role: String(role) }),
-      ...(name && {
-        name: {
-          contains: String(name),
-          mode: "insensitive",
-        },
-      }),
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      createdAt: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  res.json(users);
+export const login = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const data = await loginUser(req.body);
+    res.status(200).json(data);
+  } catch (err) {
+    next(err);
+  }
 };
 
 
 --- File: src\controllers\client.controller.ts ---
-import { Request, Response } from "express";
-import prisma from "../prisma/client";
+import { Request, Response, NextFunction } from "express";
+import * as clientService from "../services/client.service";
 
-// CREATE
-export const createClient = async (req: Request, res: Response) => {
-  const { name, phone, address } = req.body;
-  if (!name) return res.status(400).json({ error: "Client name is required" });
-
-  const client = await prisma.client.create({ data: { name, phone, address } });
-  res.status(201).json(client);
-};
-
-// READ
-export const getAllClients = async (_req: Request, res: Response) => {
-  const clients = await prisma.client.findMany({
-    orderBy: { createdAt: "desc" },
-  });
-  res.json(clients);
-};
-
-// UPDATE
-export const updateClient = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { name, phone, address } = req.body;
-
-  const updated = await prisma.client.update({
-    where: { id: Number(id) },
-    data: { name, phone, address },
-  });
-
-  res.json(updated);
-};
-
-// DELETE
-export const deleteClient = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  await prisma.client.delete({ where: { id: Number(id) } });
-  res.json({ message: "Client deleted successfully" });
-};
-
-
---- File: src\controllers\employee.controller.ts ---
-import { Request, Response } from "express";
-import prisma from "../prisma/client";
-
-export const addEmployee = async (req: Request, res: Response) => {
+export const createClient = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const { name, role, salary } = req.body;
-
-    if (!name || !role || salary === undefined) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
-
-    const employee = await prisma.employee.create({
-      data: { name, role, salary },
-    });
-
-    res.status(201).json(employee);
-  } catch (error) {
-    console.error("Error adding employee:", error);
-    res.status(500).json({ error: "Failed to add employee" });
+    const client = await clientService.createClient(req.body);
+    res.status(201).json(client);
+  } catch (err) {
+    next(err);
   }
 };
 
-export const getAllEmployees = async (_req: Request, res: Response) => {
+export const getAllClients = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const employees = await prisma.employee.findMany({
-      orderBy: { createdAt: "desc" },
-    });
-
-    res.json(employees);
-  } catch (error) {
-    console.error("Error getting employees:", error);
-    res.status(500).json({ error: "Failed to get employees" });
+    const clients = await clientService.getAllClients();
+    res.json(clients);
+  } catch (err) {
+    next(err);
   }
 };
 
-export const updateEmployee = async (req: Request, res: Response) => {
+export const getClientById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const { id } = req.params;
-    const { name, role, salary } = req.body;
+    const client = await clientService.getClientById(req.params.id);
+    res.json(client);
+  } catch (err) {
+    next(err);
+  }
+};
 
-    const employeeId = Number(id);
-    if (isNaN(employeeId)) {
-      return res.status(400).json({ error: "Invalid employee ID" });
-    }
-
-    const existing = await prisma.employee.findUnique({
-      where: { id: employeeId },
-    });
-
-    if (!existing) {
-      return res.status(404).json({ error: "Employee not found" });
-    }
-
-    const updated = await prisma.employee.update({
-      where: { id: employeeId },
-      data: { name, role, salary },
-    });
-
+export const updateClient = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const updated = await clientService.updateClient(req.params.id, req.body);
     res.json(updated);
-  } catch (error) {
-    console.error("Error updating employee:", error);
-    res.status(500).json({ error: "Failed to update employee" });
+  } catch (err) {
+    next(err);
   }
 };
 
-export const deleteEmployee = async (req: Request, res: Response) => {
+export const deleteClient = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const { id } = req.params;
-    const employeeId = Number(id);
+    await clientService.deleteClient(req.params.id);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+};
 
-    if (isNaN(employeeId)) {
-      return res.status(400).json({ error: "Invalid employee ID" });
-    }
 
-    const existing = await prisma.employee.findUnique({
-      where: { id: employeeId },
-    });
+--- File: src\controllers\finance.controller.ts ---
+import { Request, Response, NextFunction } from "express";
+import * as financeService from "../services/finance.service";
 
-    if (!existing) {
-      return res.status(404).json({ error: "Employee not found" });
-    }
+export const createFinanceEntry = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const entry = await financeService.createFinanceEntry(req.body);
+    res.status(201).json(entry);
+  } catch (err) {
+    next(err);
+  }
+};
 
-    await prisma.employee.delete({ where: { id: employeeId } });
-    res.json({ message: "Employee deleted successfully" });
-  } catch (error) {
-    console.error("Error deleting employee:", error);
-    res.status(500).json({ error: "Failed to delete employee" });
+export const getAllFinance = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const entries = await financeService.getAllFinance();
+    res.json(entries);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getFinanceByMonth = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const entries = await financeService.getFinanceByMonth(req.params.month);
+    res.json(entries);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const deleteFinanceEntry = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    await financeService.deleteFinanceEntry(req.params.id);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
   }
 };
 
 
 --- File: src\controllers\invoice.controller.ts ---
-import { Request, Response } from "express";
-import prisma from "../prisma/client";
-import { startOfMonth, endOfMonth } from "date-fns";
+import { Request, Response, NextFunction } from "express";
+import * as invoiceService from "../services/invoice.service";
 
-export const createInvoice = async (req: Request, res: Response) => {
-  const { clientId, employeeId, items } = req.body;
-
-  if (!clientId || !items || items.length === 0) {
-    return res.status(400).json({ error: "Client and items are required" });
+export const createInvoice = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const invoice = await invoiceService.createInvoice(req.user!.id, req.body);
+    res.status(201).json(invoice);
+  } catch (err) {
+    next(err);
   }
-
-  const total = items.reduce((sum: number, item: any) => {
-    return sum + item.unitPrice * item.quantity;
-  }, 0);
-
-  const invoice = await prisma.invoice.create({
-    data: {
-      clientId,
-      employeeId,
-      total,
-      items: {
-        create: items.map((item: any) => ({
-          meshType: item.meshType,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-        })),
-      },
-    },
-    include: {
-      client: true,
-      employee: true,
-      items: true,
-    },
-  });
-
-  res.status(201).json(invoice);
 };
 
-export const getInvoices = async (req: Request, res: Response) => {
-  const { month, clientId } = req.query;
-
-  const where: any = {};
-  if (month) {
-    const [year, m] = (month as string).split("-").map(Number);
-    where.createdAt = {
-      gte: startOfMonth(new Date(year, m - 1)),
-      lte: endOfMonth(new Date(year, m - 1)),
-    };
+export const getAllInvoices = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const invoices = await invoiceService.getAllInvoices();
+    res.json(invoices);
+  } catch (err) {
+    next(err);
   }
-  if (clientId) {
-    where.clientId = Number(clientId);
-  }
-
-  const invoices = await prisma.invoice.findMany({
-    where,
-    include: {
-      client: true,
-      employee: true,
-      items: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  res.json(invoices);
 };
 
-export const updateInvoice = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { items } = req.body;
-
-  if (!items || items.length === 0) {
-    return res.status(400).json({ error: "Invoice items required" });
+export const getInvoiceById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const invoice = await invoiceService.getInvoiceById(req.params.id);
+    res.json(invoice);
+  } catch (err) {
+    next(err);
   }
+};
 
-  const total = items.reduce((sum: number, item: any) => {
-    return sum + item.unitPrice * item.quantity;
-  }, 0);
+export const deleteInvoice = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    await invoiceService.deleteInvoice(req.params.id);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+};
 
-  // Delete existing items
-  await prisma.saleItem.deleteMany({ where: { invoiceId: Number(id) } });
+export const updateInvoicePayment = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const result = await invoiceService.addPayment(
+      req.params.id,
+      req.body.amount
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
 
-  const invoice = await prisma.invoice.update({
-    where: { id: Number(id) },
-    data: {
-      total,
-      items: {
-        create: items.map((item: any) => ({
-          meshType: item.meshType,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-        })),
-      },
-    },
-    include: {
-      client: true,
-      employee: true,
-      items: true,
-    },
-  });
+export const generateInvoicePDFRoute = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const buffer = await invoiceService.getInvoicePDF(req.params.id);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", "inline; filename=invoice.pdf");
+    res.send(buffer);
+  } catch (err) {
+    next(err);
+  }
+};
 
-  res.json(invoice);
+export const sendInvoiceByEmail = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    await invoiceService.emailInvoice(req.params.id);
+    res.json({ message: "Email sent!" });
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+--- File: src\controllers\machine.controller.ts ---
+import { Request, Response, NextFunction } from "express";
+import * as machineService from "../services/machine.service";
+
+export const createMachine = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const machine = await machineService.createMachine(req.body);
+    res.status(201).json(machine);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getAllMachines = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const machines = await machineService.getAllMachines();
+    res.json(machines);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getMachineById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const machine = await machineService.getMachineById(req.params.id);
+    res.json(machine);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const updateMachine = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const updated = await machineService.updateMachine(req.params.id, req.body);
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const deleteMachine = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    await machineService.deleteMachine(req.params.id);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const createMachineLog = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const log = await machineService.createMachineLog(
+      req.params.id,
+      req.user!.id,
+      req.body
+    );
+    res.status(201).json(log);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getMachineLogs = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const logs = await machineService.getMachineLogs(req.params.id);
+    res.json(logs);
+  } catch (err) {
+    next(err);
+  }
 };
 
 
 --- File: src\controllers\mesh.controller.ts ---
 import { Request, Response } from "express";
-import prisma from "../prisma/client";
-import { asyncHandler } from "../utils/asyncHandler";
+import { prisma } from "../config/prisma";
 
-// GET all mesh
-export const getAllMesh = asyncHandler(async (_req: Request, res: Response) => {
-  const mesh = await prisma.meshProduction.findMany({
-    include: { employee: true },
-    orderBy: { createdAt: "desc" },
-  });
-  res.json(mesh);
-});
-
-// POST create mesh + deduct wire by type & diameter
-export const addMesh = asyncHandler(async (req: Request, res: Response) => {
-  const { meshType, quantity, wireUsedKg, wireDiameter, employeeId } = req.body;
-
-  if (!meshType || !wireDiameter || !quantity || !wireUsedKg || !employeeId) {
-    return res.status(400).json({ error: "Missing required mesh fields" });
+// Create a new mesh type
+export const createMeshType = async (req: Request, res: Response) => {
+  try {
+    const mesh = await prisma.meshType.create({ data: req.body });
+    res.status(201).json(mesh);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to create mesh type", error: err });
   }
+};
 
-  // Create mesh production
-  const mesh = await prisma.meshProduction.create({
-    data: { meshType, quantity, wireUsedKg, wireDiameter, employeeId },
-  });
+// Get all mesh types
+export const getAllMeshTypes = async (req: Request, res: Response) => {
+  try {
+    const meshes = await prisma.meshType.findMany();
+    res.status(200).json(meshes);
+  } catch (err) {
+    res
+      .status(500)
+      .json({ message: "Failed to retrieve mesh types", error: err });
+  }
+};
 
-  const baseType = meshType.split("x")[0]; // e.g., "10" from "10x10"
-
-  // Deduct wire based on type + diameter
-  const wireUpdate = await prisma.wire.updateMany({
-    where: {
-      type: baseType,
-      diameter: wireDiameter,
-    },
-    data: {
-      quantityKg: {
-        decrement: wireUsedKg,
-      },
-    },
-  });
-
-  if (wireUpdate.count === 0) {
-    return res.status(404).json({
-      error: `No matching wire found for type "${baseType}" and diameter "${wireDiameter}"`,
+// Get a specific mesh type by ID
+export const getMeshTypeById = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const mesh = await prisma.meshType.findUnique({
+      where: { id: req.params.id },
     });
+    if (!mesh) {
+      res.status(404).json({ message: "Mesh type not found" });
+      return;
+    }
+    res.status(200).json(mesh);
+  } catch (err) {
+    res.status(500).json({ message: "Error getting mesh type", error: err });
+  }
+};
+
+// Update a mesh type
+export const updateMeshType = async (req: Request, res: Response) => {
+  try {
+    const mesh = await prisma.meshType.update({
+      where: { id: req.params.id },
+      data: req.body,
+    });
+    res.status(200).json(mesh);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to update mesh type", error: err });
+  }
+};
+
+// Delete a mesh type
+export const deleteMeshType = async (req: Request, res: Response) => {
+  try {
+    await prisma.meshType.delete({ where: { id: req.params.id } });
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ message: "Failed to delete mesh type", error: err });
+  }
+};
+
+
+--- File: src\controllers\meshRate.controller.ts ---
+import { Request, Response } from "express";
+import prisma from "../prisma/client";
+
+/**
+ * @swagger
+ * /api/meshRate:
+ *   get:
+ *     summary: Get all mesh rates
+ *     description: Returns a list of mesh rates from the database
+ *     responses:
+ *       200:
+ *         description: List of mesh rates
+ */
+export const getRates = async (req: Request, res: Response) => {
+  try {
+    const rates = await prisma.meshRate.findMany();
+    res.json(rates);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch mesh rates" });
+  }
+};
+
+/**
+ * @swagger
+ * /api/meshRate/create:
+ *   post:
+ *     summary: Create a new mesh rate
+ *     description: Creates a new mesh rate in the database
+ *     responses:
+ *       201:
+ *         description: Mesh rate successfully added
+ *       400:
+ *         description: Invalid request body
+ */
+export const addRate = async (req: Request, res: Response) => {
+  const { meshType, rate, price } = req.body;
+
+  if (!meshType || !rate || !price) {
+    return res.status(400).json({ error: "Missing required fields" });
   }
 
-  res.status(201).json(mesh);
-});
+  try {
+    const newRate = await prisma.meshRate.create({
+      data: { meshType, rate, price },
+    });
+    res.status(201).json(newRate);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to create mesh rate" });
+  }
+};
+
+
+--- File: src\controllers\production.controller.ts ---
+import { Request, Response, NextFunction } from "express";
+import * as productionService from "../services/production.service";
+
+export const createProduction = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const data = await productionService.createProduction(
+      req.user!.id,
+      req.body
+    );
+    res.status(201).json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getAllProductions = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const data = await productionService.getAllProductions();
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getProductionByDate = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { date } = req.query;
+    const data = await productionService.getProductionByDate(date as string);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
 
 
 --- File: src\controllers\report.controller.ts ---
-import { Request, Response } from "express";
-import prisma from "../prisma/client";
-import { startOfMonth, endOfMonth } from "date-fns";
-import PDFDocument from "pdfkit";
+// controllers/report.controller.ts
+import { Request, Response, NextFunction } from "express";
+import * as reportService from "../services/report.service";
 
-// 🔁 Shared data logic
-export const getMonthlyData = async (month: string) => {
-  const [year, m] = month.split("-").map(Number);
-  const from = startOfMonth(new Date(year, m - 1));
-  const to = endOfMonth(from);
-
-  const productions = await prisma.meshProduction.findMany({
-    where: { createdAt: { gte: from, lte: to } },
-    include: { employee: true },
-  });
-
-  const invoices = await prisma.invoice.findMany({
-    where: { createdAt: { gte: from, lte: to } },
-    include: { client: true, employee: true, items: true },
-  });
-
-  const productionByEmployee = productions.reduce((acc: any, p) => {
-    const emp = p.employee?.name || "Unknown";
-    acc[emp] = (acc[emp] || 0) + p.quantity;
-    return acc;
-  }, {});
-
-  const productionByType = productions.reduce((acc: any, p) => {
-    acc[p.meshType] = (acc[p.meshType] || 0) + p.quantity;
-    return acc;
-  }, {});
-
-  const wireUsedKg = productions.reduce((sum, p) => sum + p.wireUsedKg, 0);
-  const totalProduced = productions.reduce((sum, p) => sum + p.quantity, 0);
-
-  const salesByType = invoices
-    .flatMap((i) => i.items)
-    .reduce((acc: any, item) => {
-      acc[item.meshType] = (acc[item.meshType] || 0) + item.quantity;
-      return acc;
-    }, {});
-
-  const totalSold = Object.values(salesByType).reduce(
-    (sum: number, q: any) => sum + q,
-    0
-  );
-
-  const totalRevenue = invoices.reduce((sum, i) => sum + i.total, 0);
-
-  const unsoldMesh = Object.keys(productionByType).reduce((acc: any, type) => {
-    acc[type] = (productionByType[type] || 0) - (salesByType[type] || 0);
-    return acc;
-  }, {});
-
-  const topClients = Object.values(
-    invoices.reduce((acc: any, i) => {
-      const id = i.clientId;
-      if (!acc[id]) acc[id] = { name: i.client.name, totalSpent: 0 };
-      acc[id].totalSpent += i.total;
-      return acc;
-    }, {})
-  ).sort((a: any, b: any) => b.totalSpent - a.totalSpent);
-
-  return {
-    month,
-    totalMeshProduced: totalProduced,
-    wireUsedKg,
-    totalSold,
-    totalRevenue,
-    productionByEmployee,
-    productionByType,
-    salesByType,
-    unsoldMesh,
-    topClients,
-    invoices,
-  };
-};
-
-// 📄 PDF Export
-export const generateMonthlyPdfReport = async (req: Request, res: Response) => {
+export const getTopSellingMeshes = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const month = req.query.month as string;
-    if (!month)
-      return res
-        .status(400)
-        .json({ error: "Month is required (e.g., 2025-04)" });
-
-    const report = await getMonthlyData(month);
-
-    const doc = new PDFDocument();
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="Monthly-Report-${month}.pdf"`
-    );
-
-    doc.fontSize(20).text(`Monthly Report - ${month}`, { align: "center" });
-    doc.moveDown();
-
-    doc.fontSize(14).text(`Total Mesh Produced: ${report.totalMeshProduced}`);
-    doc.text(`Wire Used (kg): ${report.wireUsedKg}`);
-    doc.text(`Total Sold: ${report.totalSold}`);
-    doc.text(`Total Revenue: $${report.totalRevenue}`);
-    doc.moveDown();
-
-    doc.fontSize(16).text("Invoices", { underline: true });
-    report.invoices.forEach((inv) => {
-      doc.moveDown(0.5);
-      doc
-        .fontSize(12)
-        .text(
-          `#${inv.id} | ${inv.client.name} | ${inv.total}$ | ${new Date(
-            inv.createdAt
-          ).toLocaleDateString()}`
-        );
-      inv.items.forEach((item) => {
-        doc.text(
-          ` - ${item.meshType} | Qty: ${item.quantity} | Price: ${item.unitPrice}$`
-        );
-      });
-    });
-
-    doc.end();
-    doc.pipe(res);
+    const result = await reportService.getTopSellingMeshes();
+    res.json(result);
   } catch (err) {
-    console.error("PDF generation error:", err);
-    res.status(500).json({ error: "Failed to generate PDF" });
+    next(err);
   }
 };
 
-// 📊 JSON report
-export const getMonthlyReport = async (req: Request, res: Response) => {
+export const getTopClients = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const month = req.query.month as string;
-    if (!month)
-      return res
-        .status(400)
-        .json({ error: "Month is required (e.g., 2025-04)" });
-
-    const report = await getMonthlyData(month);
-    res.json(report);
+    const result = await reportService.getTopClients();
+    res.json(result);
   } catch (err) {
-    console.error("Monthly report error:", err);
-    res.status(500).json({ error: "Failed to fetch report" });
+    next(err);
+  }
+};
+
+export const getTopWorkers = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const result = await reportService.getTopWorkers();
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getCurrentStock = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const result = await reportService.getCurrentStock();
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getWireEfficiency = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const result = await reportService.getWireEfficiency();
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+--- File: src\controllers\salary.controller.ts ---
+import { Request, Response, NextFunction } from "express";
+import * as salaryService from "../services/salary.service";
+
+export const createSalary = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const data = await salaryService.createSalary(req.body);
+    res.status(201).json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getAllSalaries = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const data = await salaryService.getAllSalaries();
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getSalariesByMonth = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const data = await salaryService.getSalariesByMonth(req.params.month);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const markSalaryAsPaid = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const data = await salaryService.markSalaryAsPaid(req.params.id);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+--- File: src\controllers\user.controller.ts ---
+import { Request, Response, NextFunction } from "express";
+import * as userService from "../services/user.service";
+
+export const getAllUsers = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const users = await userService.getAllUsers();
+    res.json(users);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getUserById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const user = await userService.getUserById(req.params.id);
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const updateUser = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const updated = await userService.updateUser(req.params.id, req.body);
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const deleteUser = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    await userService.deleteUser(req.params.id);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
   }
 };
 
 
 --- File: src\controllers\wire.controller.ts ---
-import { Request, Response } from "express";
-import prisma from "../prisma/client";
+import { Request, Response, NextFunction } from "express";
+import * as wireService from "../services/wire.service";
 
-// Add new wire stock
-export const addWire = async (req: Request, res: Response) => {
+export const createWire = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const { type, diameter, quantityKg, pricePerKg, supplier } = req.body;
-
-    if (
-      !type ||
-      !diameter ||
-      quantityKg == null ||
-      pricePerKg == null ||
-      !supplier
-    ) {
-      return res.status(400).json({ error: "Missing required wire fields" });
-    }
-
-    const wire = await prisma.wire.create({
-      data: { type, diameter, quantityKg, pricePerKg, supplier },
-    });
-
+    const wire = await wireService.createWire(req.body);
     res.status(201).json(wire);
   } catch (err) {
-    console.error("Add wire error:", err);
-    res.status(500).json({ error: "Failed to add wire" });
+    next(err);
   }
 };
 
-// Get all wire entries
-export const getAllWire = async (_req: Request, res: Response) => {
+export const getAllWires = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const wires = await prisma.wire.findMany({
-      orderBy: { createdAt: "desc" },
-    });
-    res.json(wires);
+    const list = await wireService.getAllWires();
+    res.json(list);
   } catch (err) {
-    console.error("Get wire error:", err);
-    res.status(500).json({ error: "Failed to fetch wires" });
+    next(err);
   }
 };
 
-// Get available wire (for production)
-export const getAvailableWire = async (_req: Request, res: Response) => {
+export const getWireBalanceByType = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const wires = await prisma.wire.findMany({
-      select: {
-        id: true,
-        type: true,
-        diameter: true,
-        quantityKg: true,
-        pricePerKg: true,
-        supplier: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    res.json(wires);
+    const balance = await wireService.getRemainingWireByType(
+      req.params.wireType
+    );
+    res.json({ wireType: req.params.wireType, remainingKg: balance });
   } catch (err) {
-    console.error("Get available wire error:", err);
-    res.status(500).json({ error: "Failed to fetch available wire" });
+    next(err);
   }
 };
 
-// Update wire
-export const updateWire = async (req: Request, res: Response) => {
+export const deleteWire = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    const wireId = Number(req.params.id);
-    const { type, diameter, quantityKg, pricePerKg, supplier } = req.body;
-
-    const existing = await prisma.wire.findUnique({ where: { id: wireId } });
-    if (!existing) return res.status(404).json({ error: "Wire not found" });
-
-    const updated = await prisma.wire.update({
-      where: { id: wireId },
-      data: { type, diameter, quantityKg, pricePerKg, supplier },
-    });
-
-    res.json(updated);
+    await wireService.deleteWire(req.params.id);
+    res.status(204).send();
   } catch (err) {
-    console.error("Update wire error:", err);
-    res.status(500).json({ error: "Failed to update wire" });
-  }
-};
-
-// Delete wire
-export const deleteWire = async (req: Request, res: Response) => {
-  try {
-    const wireId = Number(req.params.id);
-    const existing = await prisma.wire.findUnique({ where: { id: wireId } });
-    if (!existing) return res.status(404).json({ error: "Wire not found" });
-
-    await prisma.wire.delete({ where: { id: wireId } });
-    res.json({ message: "Wire deleted successfully" });
-  } catch (err) {
-    console.error("Delete wire error:", err);
-    res.status(500).json({ error: "Failed to delete wire" });
+    next(err);
   }
 };
 
@@ -925,20 +1232,22 @@ export const deleteWire = async (req: Request, res: Response) => {
 
 
 --- File: src\docs\swagger.ts ---
+// docs/swagger.ts
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 
-const options = {
+const options: swaggerJsdoc.Options = {
   definition: {
     openapi: "3.0.0",
     info: {
-      title: "SetkaPro API",
+      title: "Factory Management API",
       version: "1.0.0",
-      description: "API documentation for SetkaPro system",
+      description:
+        "Mesh production, payroll, inventory, and client management system",
     },
     servers: [
       {
-        url: "http://localhost:3001",
+        url: "http://localhost:3000",
         description: "Local server",
       },
     ],
@@ -956,96 +1265,190 @@ const options = {
   apis: ["./src/routes/*.ts"],
 };
 
-const specs = swaggerJsdoc(options);
+const swaggerSpec = swaggerJsdoc(options);
 
-export { swaggerUi, specs };
+export { swaggerUi, swaggerSpec };
+
+
+--- File: src\i18n\messages.ts ---
+export type Lang = "en" | "ru";
+
+type MessageStructure = {
+  auth: {
+    loginSuccess: string;
+    registerSuccess: string;
+  };
+  invoice: {
+    created: string;
+    paid: string;
+    title: string;
+    client: string;
+    meshType: string;
+    quantity: string;
+    unitPrice: string;
+    total: string;
+    date: string;
+    emailSubject: string;
+    emailBody: string;
+  };
+  errors: {
+    notFound: string;
+    unauthorized: string;
+  };
+};
+
+export const messages: Record<Lang, MessageStructure> = {
+  en: {
+    auth: {
+      loginSuccess: "Login successful",
+      registerSuccess: "User registered successfully",
+    },
+    invoice: {
+      created: "Invoice has been created",
+      paid: "Payment recorded",
+      title: "Invoice",
+      client: "Client",
+      meshType: "Mesh Type",
+      quantity: "Quantity",
+      unitPrice: "Price per unit",
+      total: "Total",
+      date: "Date",
+      emailSubject: "Your Invoice",
+      emailBody: "Thank you for your purchase. See attached invoice.",
+    },
+    errors: {
+      notFound: "Not found",
+      unauthorized: "Unauthorized",
+    },
+  },
+  ru: {
+    auth: {
+      loginSuccess: "Вход выполнен успешно",
+      registerSuccess: "Пользователь зарегистрирован",
+    },
+    invoice: {
+      created: "Счет был создан",
+      paid: "Платеж зарегистрирован",
+      title: "Счет",
+      client: "Клиент",
+      meshType: "Тип сетки",
+      quantity: "Количество",
+      unitPrice: "Цена за единицу",
+      total: "Итого",
+      date: "Дата",
+      emailSubject: "Ваш счет",
+      emailBody: "Спасибо за покупку. Счет прилагается.",
+    },
+    errors: {
+      notFound: "Не найдено",
+      unauthorized: "Нет доступа",
+    },
+  },
+};
+
+export const t = (key: string, lang: Lang = "en"): string => {
+  const parts = key.split(".");
+  let val: any = messages[lang as Lang];
+
+  for (const part of parts) {
+    val = val?.[part];
+    if (val === undefined) break;
+  }
+
+  return typeof val === "string" ? val : key;
+};
 
 
 --- File: src\index.ts ---
-import express, { Request, Response } from "express";
-import cors from "cors";
-import dotenv from "dotenv";
+import app from "./app";
+import { ENV } from "./config/env";
 
-// Import Routes
-import authRoutes from "./routes/auth.routes";
-import wireRoutes from "./routes/wire.routes";
-import employeeRoutes from "./routes/employee.routes";
-import meshRoutes from "./routes/mesh.routes";
-import invoiceRoutes from "./routes/invoice.routes";
-import clientRoutes from "./routes/client.routes";
-import reportRoutes from "./routes/report.routes";
-import { swaggerUi, specs } from "./docs/swagger";
-// Load environment variables
-dotenv.config();
+const PORT = ENV.PORT;
 
-const app = express();
-const PORT = process.env.PORT || 3001;
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Route Handlers
-app.use("/api/auth", authRoutes);
-app.use("/api/wire", wireRoutes);
-app.use("/api/employees", employeeRoutes);
-app.use("/api/mesh", meshRoutes);
-app.use("/api/reports", reportRoutes);
-app.use("/api/clients", clientRoutes);
-app.use("/api/invoices", invoiceRoutes);
-app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(specs));
-// Default Route
-app.get("/", (req: Request, res: Response) => {
-  res.send("SetkaPro API running ✅");
-});
-
-// Start Server
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`📚 Swagger docs at http://localhost:${PORT}/api-docs`);
 });
 
 
---- File: src\middleware\auth.middleware.ts ---
-import { Request, Response, NextFunction } from "express";
+--- File: src\middleware\auth.ts ---
 import jwt from "jsonwebtoken";
+import { Request, Response, NextFunction } from "express";
+import { prisma } from "../config/prisma";
+import { ENV } from "../config/env";
+import { Role } from "@prisma/client";
 
-export interface AuthRequest extends Request {
-  user?: { id: number; role: string };
-}
-
-export const verifyToken = (
-  req: AuthRequest,
+export const authenticate = async (
+  req: Request,
   res: Response,
   next: NextFunction
-): void => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Missing or invalid token" });
-    return;
-  }
-
+): Promise<void> => {
   try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      res.status(401).json({ message: "Unauthorized: Token missing" });
+      return;
+    }
+
     const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
-      id: number;
-      role: string;
-    };
-    req.user = decoded;
+    const decoded: any = jwt.verify(token, ENV.JWT_SECRET);
+
+    const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (!user) {
+      res.status(401).json({ message: "Unauthorized: Invalid user" });
+      return;
+    }
+
+    req.user = user;
     next();
   } catch (err) {
-    res.status(401).json({ error: "Invalid or expired token" });
+    res.status(401).json({ message: "Unauthorized: Invalid token" });
   }
 };
 
-export const requireOwner = (
-  req: AuthRequest,
+export const authorize = (roles: Role[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const user = req.user;
+    if (!user || !roles.includes(user.role)) {
+      res.status(403).json({ message: "Forbidden" });
+      return;
+    }
+    next();
+  };
+};
+
+
+--- File: src\middleware\errorHandler.ts ---
+import { Request, Response, NextFunction } from "express";
+
+export const errorHandler = (
+  err: any,
+  req: Request,
   res: Response,
   next: NextFunction
-): void => {
-  if (req.user?.role !== "OWNER") {
-    res.status(403).json({ error: "Only OWNER has access" });
-    return;
-  }
+) => {
+  console.error("🔥 Error:", err);
+  const status = err.status || 500;
+  const message = err.message || "Internal Server Error";
+
+  res.status(status).json({
+    success: false,
+    message,
+    ...(process.env.NODE_ENV !== "production" && { stack: err.stack }),
+  });
+};
+
+
+--- File: src\middleware\lang.ts ---
+import { Request, Response, NextFunction } from "express";
+
+export const detectLanguage = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const lang = req.headers["accept-language"];
+  req.lang = lang?.startsWith("ru") ? "ru" : "en";
   next();
 };
 
@@ -1061,25 +1464,23 @@ export default prisma;
 
 
 --- File: src\routes\auth.routes.ts ---
-import express from "express";
-import { register, login, listUsers } from "../controllers/auth.controller";
-import { verifyToken, requireOwner } from "../middleware/auth.middleware";
-import { asyncHandler } from "../utils/asyncHandler";
+import { Router } from "express";
+import { login, register } from "../controllers/auth.controller";
 
-const router = express.Router();
+const router = Router();
 
 /**
  * @swagger
  * tags:
  *   name: Auth
- *   description: User authentication and role-based control
+ *   description: Authentication & Registration
  */
 
 /**
  * @swagger
  * /api/auth/register:
  *   post:
- *     summary: Register a new user
+ *     summary: Register a new user (Owner only)
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -1087,7 +1488,7 @@ const router = express.Router();
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name, email, password, role]
+ *             required: [name, email, password, role, phone, address]
  *             properties:
  *               name:
  *                 type: string
@@ -1095,35 +1496,26 @@ const router = express.Router();
  *                 type: string
  *               password:
  *                 type: string
+ *               phone:
+ *                 type: string
+ *               address:
+ *                 type: string
  *               role:
  *                 type: string
- *                 enum: [OWNER, EMPLOYEE]
+ *                 enum: [OWNER, MANAGER, WORKER, DRIVER, COOK]
  *     responses:
  *       201:
- *         description: User created successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 user:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: integer
- *                     name:
- *                       type: string
- *                     role:
- *                       type: string
- *                 token:
- *                   type: string
+ *         description: User registered
+ *       400:
+ *         description: Error
  */
+router.post("/register", register);
 
 /**
  * @swagger
  * /api/auth/login:
  *   post:
- *     summary: Log in and get token
+ *     summary: Login a user
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -1140,131 +1532,40 @@ const router = express.Router();
  *     responses:
  *       200:
  *         description: User logged in
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 user:
- *                   type: object
- *                   properties:
- *                     id: { type: integer }
- *                     name: { type: string }
- *                     role: { type: string }
- *                 token:
- *                   type: string
- */
-
-/**
- * @swagger
- * /api/auth/users:
- *   get:
- *     summary: List all users (OWNER only)
- *     tags: [Auth]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: role
- *         required: false
- *         schema:
- *           type: string
- *           enum: [OWNER, EMPLOYEE]
- *         description: Filter users by role
- *       - in: query
- *         name: name
- *         required: false
- *         schema:
- *           type: string
- *         description: Filter users by partial name match (case-insensitive)
- *     responses:
- *       200:
- *         description: List of registered users
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id:
- *                     type: integer
- *                   name:
- *                     type: string
- *                   email:
- *                     type: string
- *                   role:
- *                     type: string
- *                   createdAt:
- *                     type: string
- *                     format: date-time
- *       403:
- *         description: Only OWNER can access this
  *       401:
- *         description: Missing or invalid token
+ *         description: Invalid credentials
  */
-
-router.post("/register", asyncHandler(register));
-router.post("/login", asyncHandler(login));
-router.get("/users", verifyToken, requireOwner, asyncHandler(listUsers));
+router.post("/login", login);
 
 export default router;
 
 
 --- File: src\routes\client.routes.ts ---
-import express from "express";
+import { Router } from "express";
 import {
   createClient,
   getAllClients,
+  getClientById,
   updateClient,
   deleteClient,
 } from "../controllers/client.controller";
-import { verifyToken } from "../middleware/auth.middleware";
-import { asyncHandler } from "../utils/asyncHandler";
-
-const router = express.Router();
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
+console.log(Role.OWNER);
+const router = Router();
 
 /**
  * @swagger
  * tags:
  *   name: Clients
- *   description: Manage client data
+ *   description: Manage client database
  */
+
+router.use(authenticate);
 
 /**
  * @swagger
  * /api/clients:
- *   get:
- *     summary: Get all clients
- *     tags: [Clients]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of clients
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id:
- *                     type: integer
- *                   name:
- *                     type: string
- *                   phone:
- *                     type: string
- *                   address:
- *                     type: string
- *                   createdAt:
- *                     type: string
- *                     format: date-time
- */
-
-/**
- * @swagger
- * /api/clients/create:
  *   post:
  *     summary: Add a new client
  *     tags: [Clients]
@@ -1284,25 +1585,62 @@ const router = express.Router();
  *                 type: string
  *               address:
  *                 type: string
+ *               email:
+ *                 type: string
  *     responses:
  *       201:
- *         description: Client created
+ *         description: Created client
  */
+router.post("/", authorize([Role.OWNER, Role.MANAGER]), createClient);
 
 /**
  * @swagger
- * /api/clients/update/{id}:
- *   put:
- *     summary: Update client info
+ * /api/clients:
+ *   get:
+ *     summary: Get all clients
+ *     tags: [Clients]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of clients
+ */
+router.get("/", authorize([Role.OWNER, Role.MANAGER]), getAllClients);
+
+/**
+ * @swagger
+ * /api/clients/{id}:
+ *   get:
+ *     summary: Get client by ID
  *     tags: [Clients]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
+ *       - name: id
+ *         in: path
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Client found
+ */
+router.get("/:id", authorize([Role.OWNER, Role.MANAGER]), getClientById);
+
+/**
+ * @swagger
+ * /api/clients/{id}:
+ *   put:
+ *     summary: Update client
+ *     tags: [Clients]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
  *     requestBody:
  *       required: true
  *       content:
@@ -1316,64 +1654,66 @@ const router = express.Router();
  *                 type: string
  *               address:
  *                 type: string
+ *               email:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Client updated
  */
+router.put("/:id", authorize([Role.OWNER, Role.MANAGER]), updateClient);
 
 /**
  * @swagger
- * /api/clients/delete/{id}:
+ * /api/clients/{id}:
  *   delete:
- *     summary: Delete a client
+ *     summary: Delete client
  *     tags: [Clients]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
+ *       - name: id
+ *         in: path
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
  *     responses:
- *       200:
- *         description: Client deleted
+ *       204:
+ *         description: Deleted
  */
-
-router.post("/create", verifyToken, asyncHandler(createClient));
-router.get("/", verifyToken, asyncHandler(getAllClients));
-router.put("/update/:id", verifyToken, asyncHandler(updateClient));
-router.delete("/delete/:id", verifyToken, asyncHandler(deleteClient));
+router.delete("/:id", authorize([Role.OWNER, Role.MANAGER]), deleteClient);
 
 export default router;
 
 
---- File: src\routes\employee.routes.ts ---
-import express from "express";
+--- File: src\routes\finance.routes.ts ---
+// routes/finance.routes.ts
+import { Router } from "express";
 import {
-  addEmployee,
-  getAllEmployees,
-  updateEmployee,
-  deleteEmployee,
-} from "../controllers/employee.controller";
-import { verifyToken, requireOwner } from "../middleware/auth.middleware";
-import { asyncHandler } from "../utils/asyncHandler";
+  createFinanceEntry,
+  getAllFinance,
+  getFinanceByMonth,
+  deleteFinanceEntry,
+} from "../controllers/finance.controller";
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
 
-const router = express.Router();
+const router = Router();
 
 /**
  * @swagger
  * tags:
- *   name: Employees
- *   description: Manage factory employees
+ *   name: Finance
+ *   description: Track income and expenses
  */
+
+router.use(authenticate);
 
 /**
  * @swagger
- * /api/employees:
+ * /api/finance:
  *   post:
- *     summary: Add a new employee
- *     tags: [Employees]
+ *     summary: Create a finance entry
+ *     tags: [Finance]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -1382,301 +1722,362 @@ const router = express.Router();
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name, role, salary]
+ *             required: [type, category, amount]
  *             properties:
- *               name:
+ *               type:
  *                 type: string
- *               role:
+ *                 enum: [income, expense]
+ *               category:
  *                 type: string
- *                 example: mesh_maker
- *               salary:
+ *               amount:
  *                 type: number
+ *               description:
+ *                 type: string
  *     responses:
  *       201:
- *         description: Created
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Employee'
- *
+ *         description: Finance entry created
+ */
+router.post("/", authorize([Role.OWNER]), createFinanceEntry);
+
+/**
+ * @swagger
+ * /api/finance:
  *   get:
- *     summary: List all employees
- *     tags: [Employees]
+ *     summary: Get all finance entries
+ *     tags: [Finance]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: List of employees
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Employee'
+ *         description: List of finance records
  */
+router.get("/", authorize([Role.OWNER, Role.MANAGER]), getAllFinance);
 
 /**
  * @swagger
- * /api/employees/{id}:
- *   put:
- *     summary: Update employee by ID
- *     tags: [Employees]
+ * /api/finance/month/{month}:
+ *   get:
+ *     summary: Get finance entries by month
+ *     tags: [Finance]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
+ *       - name: month
+ *         in: path
  *         required: true
- *         schema: { type: integer }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name: { type: string }
- *               role: { type: string }
- *               salary: { type: number }
- *     responses:
- *       200:
- *         description: Employee updated
- *
- *   delete:
- *     summary: Delete employee by ID
- *     tags: [Employees]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: integer }
- *     responses:
- *       200:
- *         description: Deleted successfully
- */
-
-/**
- * @swagger
- * components:
- *   schemas:
- *     Employee:
- *       type: object
- *       properties:
- *         id: { type: integer }
- *         name: { type: string }
- *         role: { type: string }
- *         salary: { type: number }
- *         createdAt:
+ *         schema:
  *           type: string
- *           format: date-time
+ *           example: 2025-04
+ *     responses:
+ *       200:
+ *         description: Monthly finance data
  */
+router.get("/month/:month", authorize([Role.OWNER]), getFinanceByMonth);
 
-router.get("/", verifyToken, asyncHandler(getAllEmployees));
-router.post("/", verifyToken, requireOwner, asyncHandler(addEmployee));
-router.put("/:id", verifyToken, requireOwner, asyncHandler(updateEmployee));
-router.delete("/:id", verifyToken, requireOwner, asyncHandler(deleteEmployee));
+/**
+ * @swagger
+ * /api/finance/{id}:
+ *   delete:
+ *     summary: Delete a finance entry
+ *     tags: [Finance]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: Entry deleted
+ */
+router.delete("/:id", authorize([Role.OWNER]), deleteFinanceEntry);
 
 export default router;
 
 
 --- File: src\routes\invoice.routes.ts ---
-import express from "express";
+import { Router } from "express";
 import {
   createInvoice,
-  getInvoices,
-  updateInvoice,
+  getAllInvoices,
+  getInvoiceById,
+  deleteInvoice,
+  updateInvoicePayment,
+  generateInvoicePDFRoute,
+  sendInvoiceByEmail,
 } from "../controllers/invoice.controller";
-import { verifyToken } from "../middleware/auth.middleware";
-import { asyncHandler } from "../utils/asyncHandler";
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
 
-const router = express.Router();
+const router = Router();
 
 /**
  * @swagger
  * tags:
  *   name: Invoices
- *   description: Manage sales/invoicing system
+ *   description: Manage mesh sales and invoices
  */
+
+router.use(authenticate);
+
+/**
+ * @swagger
+ * /api/invoices:
+ *   post:
+ *     summary: Create a new invoice
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [clientId, meshTypeId, quantity, pricePerUnit]
+ *             properties:
+ *               clientId:
+ *                 type: string
+ *               meshTypeId:
+ *                 type: string
+ *               quantity:
+ *                 type: number
+ *               pricePerUnit:
+ *                 type: number
+ *               amountPaid:
+ *                 type: number
+ *     responses:
+ *       201:
+ *         description: Invoice created
+ */
+router.post(
+  "/",
+  authorize([Role.WORKER, Role.MANAGER, Role.OWNER]),
+  createInvoice
+);
 
 /**
  * @swagger
  * /api/invoices:
  *   get:
- *     summary: List all invoices
+ *     summary: Get all invoices
  *     tags: [Invoices]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: month
- *         schema: { type: string, example: "2025-04" }
- *         description: Filter by month (YYYY-MM)
- *       - in: query
- *         name: clientId
- *         schema: { type: integer }
- *         description: Filter by client ID
  *     responses:
  *       200:
- *         description: List of invoices
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id: { type: integer }
- *                   total: { type: number }
- *                   createdAt:
- *                     type: string
- *                     format: date-time
- *                   client:
- *                     type: object
- *                     properties:
- *                       id: { type: integer }
- *                       name: { type: string }
- *                   employee:
- *                     type: object
- *                     nullable: true
- *                     properties:
- *                       id: { type: integer }
- *                       name: { type: string }
- *                   items:
- *                     type: array
- *                     items:
- *                       type: object
- *                       properties:
- *                         meshType: { type: string }
- *                         quantity: { type: integer }
- *                         unitPrice: { type: number }
+ *         description: List of all invoices
  */
+router.get("/", authorize([Role.MANAGER, Role.OWNER]), getAllInvoices);
 
 /**
  * @swagger
- * /api/invoices/create:
- *   post:
- *     summary: Create new invoice
- *     tags: [Invoices]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [clientId, items]
- *             properties:
- *               clientId: { type: integer }
- *               employeeId: { type: integer }
- *               items:
- *                 type: array
- *                 items:
- *                   type: object
- *                   required: [meshType, quantity, unitPrice]
- *                   properties:
- *                     meshType: { type: string }
- *                     quantity: { type: integer }
- *                     unitPrice: { type: number }
- *     responses:
- *       201:
- *         description: Invoice created
- */
-
-/**
- * @swagger
- * /api/invoices/update/{id}:
- *   put:
- *     summary: Update existing invoice
+ * /api/invoices/{id}:
+ *   get:
+ *     summary: Get invoice by ID
  *     tags: [Invoices]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
+ *       - name: id
+ *         in: path
  *         required: true
- *         schema: { type: integer }
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Invoice details
+ */
+router.get("/:id", authorize([Role.MANAGER, Role.OWNER]), getInvoiceById);
+
+/**
+ * @swagger
+ * /api/invoices/{id}:
+ *   delete:
+ *     summary: Delete an invoice
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: Invoice deleted
+ */
+router.delete("/:id", authorize([Role.OWNER]), deleteInvoice);
+
+/**
+ * @swagger
+ * /api/invoices/{id}/pay:
+ *   patch:
+ *     summary: Add payment to an invoice
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
  *     requestBody:
- *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [items]
+ *             required: [amount]
  *             properties:
- *               items:
- *                 type: array
- *                 items:
- *                   type: object
- *                   properties:
- *                     meshType: { type: string }
- *                     quantity: { type: integer }
- *                     unitPrice: { type: number }
+ *               amount:
+ *                 type: number
  *     responses:
  *       200:
  *         description: Invoice updated
  */
+router.patch(
+  "/:id/pay",
+  authorize([Role.MANAGER, Role.OWNER]),
+  updateInvoicePayment
+);
 
-router.post("/create", verifyToken, asyncHandler(createInvoice));
-router.get("/", verifyToken, asyncHandler(getInvoices));
-router.put("/update/:id", verifyToken, asyncHandler(updateInvoice));
+/**
+ * @swagger
+ * /api/invoices/{id}/pdf:
+ *   get:
+ *     summary: Download invoice as PDF
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Returns PDF file
+ */
+router.get(
+  "/:id/pdf",
+  authorize([Role.MANAGER, Role.OWNER]),
+  generateInvoicePDFRoute
+);
+
+/**
+ * @swagger
+ * /api/invoices/{id}/email:
+ *   post:
+ *     summary: Send invoice to client via email
+ *     tags: [Invoices]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Email sent
+ */
+router.post(
+  "/:id/email",
+  authorize([Role.MANAGER, Role.OWNER]),
+  sendInvoiceByEmail
+);
+
+export default router;
+
+
+--- File: src\routes\localization.routes.ts ---
+import { Router } from "express";
+
+const router = Router();
+
+router.get("/", (req, res) => {
+  res.json({ message: "Localization routes will be here soon." });
+});
+
+export default router;
+
+
+--- File: src\routes\machine.routes.ts ---
+// routes/machine.routes.ts
+import { Router } from "express";
+import {
+  createMachine,
+  getAllMachines,
+  getMachineById,
+  updateMachine,
+  deleteMachine,
+  createMachineLog,
+  getMachineLogs,
+} from "../controllers/machine.controller";
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
+
+const router = Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Machines
+ *   description: Manage machines and logs
+ */
+
+router.use(authenticate);
+
+router.post("/", authorize([Role.OWNER, Role.MANAGER]), createMachine);
+router.get("/", authorize([Role.OWNER, Role.MANAGER]), getAllMachines);
+router.get("/:id", authorize([Role.OWNER, Role.MANAGER]), getMachineById);
+router.put("/:id", authorize([Role.OWNER]), updateMachine);
+router.delete("/:id", authorize([Role.OWNER]), deleteMachine);
+
+router.post(
+  "/:id/logs",
+  authorize([Role.WORKER, Role.MANAGER, Role.OWNER]),
+  createMachineLog
+);
+router.get("/:id/logs", authorize([Role.OWNER, Role.MANAGER]), getMachineLogs);
 
 export default router;
 
 
 --- File: src\routes\mesh.routes.ts ---
-import express from "express";
-import { addMesh, getAllMesh } from "../controllers/mesh.controller";
-import { verifyToken } from "../middleware/auth.middleware";
-import { asyncHandler } from "../utils/asyncHandler";
+import { Router } from "express";
+import {
+  createMeshType,
+  getAllMeshTypes,
+  getMeshTypeById,
+  updateMeshType,
+  deleteMeshType,
+} from "../controllers/mesh.controller";
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
 
-const router = express.Router();
+const router = Router();
 
 /**
  * @swagger
  * tags:
  *   name: Mesh
- *   description: Mesh production tracking
+ *   description: Mesh types and pricing
  */
+
+router.use(authenticate);
 
 /**
  * @swagger
- * /api/mesh:
- *   get:
- *     summary: Get all mesh production records
- *     tags: [Mesh]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of mesh records
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id: { type: integer }
- *                   meshType: { type: string }
- *                   wireDiameter: { type: string }
- *                   quantity: { type: integer }
- *                   wireUsedKg: { type: number }
- *                   employee:
- *                     type: object
- *                     properties:
- *                       id: { type: integer }
- *                       name: { type: string }
- *                   createdAt: { type: string, format: date-time }
- */
-
-/**
- * @swagger
- * /api/mesh/create:
+ * /api/meshes:
  *   post:
- *     summary: Add a mesh production entry
+ *     summary: Create mesh type
  *     tags: [Mesh]
  *     security:
  *       - bearerAuth: []
@@ -1686,466 +2087,1397 @@ const router = express.Router();
  *         application/json:
  *           schema:
  *             type: object
- *             required: [meshType, wireDiameter, quantity, wireUsedKg, employeeId]
+ *             required: [type, wireType, priceForClient, priceForWorker, weightPerPiece]
  *             properties:
- *               meshType:
+ *               type:
  *                 type: string
  *                 example: "10x10"
- *               wireDiameter:
+ *               form:
  *                 type: string
- *                 example: "6mm"
- *               quantity:
- *                 type: integer
- *               wireUsedKg:
+ *                 example: "roll"
+ *               wireType:
+ *                 type: string
+ *                 example: "3mm"
+ *               priceForClient:
  *                 type: number
- *               employeeId:
- *                 type: integer
+ *               priceForWorker:
+ *                 type: number
+ *               weightPerPiece:
+ *                 type: number
+ *               stockThreshold:
+ *                 type: number
  *     responses:
  *       201:
- *         description: Mesh entry created
+ *         description: Created mesh type
+ */
+router.post("/", authorize([Role.OWNER]), createMeshType);
+
+/**
+ * @swagger
+ * /api/meshes:
+ *   get:
+ *     summary: Get all mesh types
+ *     tags: [Mesh]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of mesh types
+ */
+router.get(
+  "/",
+  authorize([Role.OWNER, Role.MANAGER, Role.WORKER]),
+  getAllMeshTypes
+);
+
+/**
+ * @swagger
+ * /api/meshes/{id}:
+ *   get:
+ *     summary: Get mesh type by ID
+ *     tags: [Mesh]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Mesh type details
+ */
+router.get("/:id", authorize([Role.OWNER, Role.MANAGER]), getMeshTypeById);
+
+/**
+ * @swagger
+ * /api/meshes/{id}:
+ *   put:
+ *     summary: Update mesh type
+ *     tags: [Mesh]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               type:
+ *                 type: string
+ *               form:
+ *                 type: string
+ *               wireType:
+ *                 type: string
+ *               priceForClient:
+ *                 type: number
+ *               priceForWorker:
+ *                 type: number
+ *               weightPerPiece:
+ *                 type: number
+ *               currentStock:
+ *                 type: number
+ *               stockThreshold:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Updated mesh type
+ */
+router.put("/:id", authorize([Role.OWNER]), updateMeshType);
+
+/**
+ * @swagger
+ * /api/meshes/{id}:
+ *   delete:
+ *     summary: Delete mesh type
+ *     tags: [Mesh]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *     responses:
+ *       204:
+ *         description: Deleted
+ */
+router.delete("/:id", authorize([Role.OWNER]), deleteMeshType);
+
+export default router;
+
+
+--- File: src\routes\production.routes.ts ---
+import { Router } from "express";
+import {
+  createProduction,
+  getAllProductions,
+  getProductionByDate,
+} from "../controllers/production.controller";
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
+
+const router = Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Production
+ *   description: Mesh production logs by workers
  */
 
-router.get("/", verifyToken, asyncHandler(getAllMesh));
-router.post("/create", verifyToken, asyncHandler(addMesh));
+router.use(authenticate);
+
+/**
+ * @swagger
+ * /api/production:
+ *   post:
+ *     summary: Add a production entry
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [meshTypeId, quantity, startedAt, finishedAt]
+ *             properties:
+ *               meshTypeId:
+ *                 type: string
+ *               quantity:
+ *                 type: number
+ *               startedAt:
+ *                 type: string
+ *               finishedAt:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Production entry created
+ */
+router.post(
+  "/",
+  authorize([Role.WORKER, Role.MANAGER, Role.OWNER]),
+  createProduction
+);
+
+/**
+ * @swagger
+ * /api/production:
+ *   get:
+ *     summary: Get all production logs
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of logs
+ */
+router.get("/", authorize([Role.MANAGER, Role.OWNER]), getAllProductions);
+
+/**
+ * @swagger
+ * /api/production?date=YYYY-MM-DD:
+ *   get:
+ *     summary: Get production by date
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Production for that day
+ */
+router.get("/date", authorize([Role.MANAGER, Role.OWNER]), getProductionByDate);
 
 export default router;
 
 
 --- File: src\routes\report.routes.ts ---
-import express, { Request, Response } from "express";
+// routes/report.routes.ts
+import { Router } from "express";
 import {
-  getMonthlyReport,
-  generateMonthlyPdfReport,
-  getMonthlyData,
+  getTopSellingMeshes,
+  getTopClients,
+  getTopWorkers,
+  getCurrentStock,
+  getWireEfficiency,
 } from "../controllers/report.controller";
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
 
-import { exportMonthlyReportToExcel } from "../utils/excelExporter";
-import { verifyToken, requireOwner } from "../middleware/auth.middleware";
-import { asyncHandler } from "../utils/asyncHandler";
-
-const router = express.Router();
+const router = Router();
 
 /**
  * @swagger
  * tags:
  *   name: Reports
- *   description: Monthly reports and analytics
+ *   description: Analytics and insights
  */
+
+router.use(authenticate);
+
+router.get(
+  "/top-meshes",
+  authorize([Role.OWNER, Role.MANAGER]),
+  getTopSellingMeshes
+);
+router.get(
+  "/top-clients",
+  authorize([Role.OWNER, Role.MANAGER]),
+  getTopClients
+);
+router.get(
+  "/top-workers",
+  authorize([Role.OWNER, Role.MANAGER]),
+  getTopWorkers
+);
+router.get("/stock", authorize([Role.OWNER, Role.MANAGER]), getCurrentStock);
+router.get("/wire-efficiency", authorize([Role.OWNER]), getWireEfficiency);
+
+export default router;
+
+
+--- File: src\routes\salary.routes.ts ---
+import { Router } from "express";
+import {
+  createSalary,
+  getAllSalaries,
+  getSalariesByMonth,
+  markSalaryAsPaid,
+} from "../controllers/salary.controller";
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
+
+const router = Router();
 
 /**
  * @swagger
- * /api/reports/monthly:
- *   get:
- *     summary: Get monthly report (mesh, sales, wire usage)
- *     tags: [Reports]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: month
- *         required: true
- *         schema:
- *           type: string
- *           example: 2025-04
- *         description: Target month in YYYY-MM format
- *     responses:
- *       200:
- *         description: Monthly report
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 month: { type: string }
- *                 totalMeshProduced: { type: integer }
- *                 wireUsedKg: { type: number }
- *                 totalSold: { type: integer }
- *                 totalRevenue: { type: number }
- *                 productionByEmployee:
- *                   type: object
- *                   additionalProperties: { type: integer }
- *                 productionByType:
- *                   type: object
- *                   additionalProperties: { type: integer }
- *                 salesByType:
- *                   type: object
- *                   additionalProperties: { type: integer }
- *                 unsoldMesh:
- *                   type: object
- *                   additionalProperties: { type: integer }
- *                 topClients:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       name: { type: string }
- *                       totalSpent: { type: number }
- *                 invoices:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id: { type: integer }
- *                       total: { type: number }
- *                       createdAt: { type: string, format: date-time }
- *                       client:
- *                         type: object
- *                         properties:
- *                           id: { type: integer }
- *                           name: { type: string }
- *                       employee:
- *                         type: object
- *                         nullable: true
- *                         properties:
- *                           id: { type: integer }
- *                           name: { type: string }
- *                       items:
- *                         type: array
- *                         items:
- *                           type: object
- *                           properties:
- *                             meshType: { type: string }
- *                             quantity: { type: integer }
- *                             unitPrice: { type: number }
+ * tags:
+ *   name: Salaries
+ *   description: Manage employee salary and payroll
  */
+
+router.use(authenticate);
 
 /**
  * @swagger
- * /api/reports/monthly/pdf:
- *   get:
- *     summary: Download monthly report as PDF
- *     tags: [Reports]
+ * /api/salaries:
+ *   post:
+ *     summary: Create a new salary record
+ *     tags: [Salaries]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: month
- *         required: true
- *         schema:
- *           type: string
- *           example: 2025-04
- *         description: Month to generate PDF for
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userId, month, amount]
+ *             properties:
+ *               userId:
+ *                 type: string
+ *               month:
+ *                 type: string
+ *               amount:
+ *                 type: number
  *     responses:
- *       200:
- *         description: PDF generated
- *         content:
- *           application/pdf:
- *             schema:
- *               type: string
- *               format: binary
+ *       201:
+ *         description: Salary created
  */
+router.post("/", authorize([Role.OWNER]), createSalary);
 
 /**
  * @swagger
- * /api/reports/monthly/export:
+ * /api/salaries:
  *   get:
- *     summary: Export monthly report to Excel
- *     tags: [Reports]
+ *     summary: Get all salary records
+ *     tags: [Salaries]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of salaries
+ */
+router.get("/", authorize([Role.OWNER, Role.MANAGER]), getAllSalaries);
+
+/**
+ * @swagger
+ * /api/salaries/month/{month}:
+ *   get:
+ *     summary: Get salary records by month (e.g. 2025-04)
+ *     tags: [Salaries]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: query
- *         name: month
+ *       - name: month
+ *         in: path
  *         required: true
  *         schema:
  *           type: string
- *           example: 2025-04
- *         description: Month to export as Excel
  *     responses:
  *       200:
- *         description: Excel file exported
- *         content:
- *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
- *             schema:
- *               type: string
- *               format: binary
+ *         description: Salaries for given month
+ */
+router.get(
+  "/month/:month",
+  authorize([Role.OWNER, Role.MANAGER]),
+  getSalariesByMonth
+);
+
+/**
+ * @swagger
+ * /api/salaries/{id}/pay:
+ *   patch:
+ *     summary: Mark salary as paid
+ *     tags: [Salaries]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Salary marked as paid
+ */
+router.patch("/:id/pay", authorize([Role.OWNER]), markSalaryAsPaid);
+
+export default router;
+
+
+--- File: src\routes\user.routes.ts ---
+import { Router } from "express";
+import {
+  getAllUsers,
+  getUserById,
+  updateUser,
+  deleteUser,
+} from "../controllers/user.controller";
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
+
+const router = Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: Users
+ *   description: Manage employees (by owner or manager)
  */
 
-router.get(
-  "/monthly",
-  verifyToken,
-  requireOwner,
-  asyncHandler(getMonthlyReport)
-);
+router.use(authenticate); // All routes require auth
 
-router.get(
-  "/monthly/pdf",
-  verifyToken,
-  requireOwner,
-  asyncHandler(generateMonthlyPdfReport)
-);
+/**
+ * @swagger
+ * /api/users:
+ *   get:
+ *     summary: Get all users
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of users
+ */
+router.get("/", authorize([Role.OWNER, Role.MANAGER]), getAllUsers);
 
-router.get(
-  "/monthly/export",
-  verifyToken,
-  requireOwner,
-  asyncHandler(
-    async (req: Request<{}, {}, {}, { month: string }>, res: Response) => {
-      const month = req.query.month;
-      if (!month) {
-        return res
-          .status(400)
-          .json({ error: "Query param 'month' is required" });
-      }
+/**
+ * @swagger
+ * /api/users/{id}:
+ *   get:
+ *     summary: Get user by ID
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User object
+ */
+router.get("/:id", authorize([Role.OWNER, Role.MANAGER]), getUserById);
 
-      const report = await getMonthlyData(month);
-      await exportMonthlyReportToExcel(report, res);
-    }
-  )
-);
+/**
+ * @swagger
+ * /api/users/{id}:
+ *   put:
+ *     summary: Update user
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               address:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Updated user
+ */
+router.put("/:id", authorize([Role.OWNER]), updateUser);
+
+/**
+ * @swagger
+ * /api/users/{id}:
+ *   delete:
+ *     summary: Delete user
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: Deleted
+ */
+router.delete("/:id", authorize([Role.OWNER]), deleteUser);
 
 export default router;
 
 
 --- File: src\routes\wire.routes.ts ---
-import express from "express";
+import { Router } from "express";
 import {
-  addWire,
-  getAllWire,
-  updateWire,
+  createWire,
+  getAllWires,
+  getWireBalanceByType,
   deleteWire,
-  getAvailableWire,
 } from "../controllers/wire.controller";
-import { verifyToken, requireOwner } from "../middleware/auth.middleware";
-import { asyncHandler } from "../utils/asyncHandler";
+import { authenticate, authorize } from "../middleware/auth";
+import { Role } from "@prisma/client";
 
-const router = express.Router();
+const router = Router();
 
 /**
  * @swagger
  * tags:
  *   name: Wire
- *   description: Wire Inventory Management
+ *   description: Manage imported wires by kg
  */
+
+router.use(authenticate);
 
 /**
  * @swagger
- * /api/wire:
+ * /api/wires:
+ *   post:
+ *     summary: Import new wire
+ *     tags: [Wire]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [wireType, quantityKg]
+ *             properties:
+ *               wireType:
+ *                 type: string
+ *               quantityKg:
+ *                 type: number
+ *     responses:
+ *       201:
+ *         description: Wire entry created
+ */
+router.post("/", authorize([Role.OWNER]), createWire);
+
+/**
+ * @swagger
+ * /api/wires:
  *   get:
- *     summary: Get all wire entries
+ *     summary: List all wire imports
  *     tags: [Wire]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: List of wire stock
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id:
- *                     type: integer
- *                   type:
- *                     type: string
- *                   diameter:
- *                     type: string
- *                   quantityKg:
- *                     type: number
- *                   pricePerKg:
- *                     type: number
- *                   supplier:
- *                     type: string
- *                   createdAt:
- *                     type: string
- *                     format: date-time
+ *         description: List of wire imports
  */
-/**
- * @swagger
- * /api/wire/create:
- *   post:
- *     summary: Add new wire stock
- *     tags: [Wire]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [type, diameter, quantityKg, pricePerKg, supplier]
- *             properties:
- *               type:
- *                 type: string
- *               diameter:
- *                 type: string
- *               quantityKg:
- *                 type: number
- *               pricePerKg:
- *                 type: number
- *               supplier:
- *                 type: string
- *     responses:
- *       201:
- *         description: Wire added
- */
+router.get("/", authorize([Role.OWNER, Role.MANAGER]), getAllWires);
 
 /**
  * @swagger
- * /api/wire/update/{id}:
- *   put:
- *     summary: Update wire entry
+ * /api/wires/balance/{wireType}:
+ *   get:
+ *     summary: Get remaining kg for a wire type
  *     tags: [Wire]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
+ *       - name: wireType
+ *         in: path
  *         required: true
  *         schema:
- *           type: integer
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               type:
- *                 type: string
- *               diameter:
- *                 type: string
- *               quantityKg:
- *                 type: number
- *               pricePerKg:
- *                 type: number
- *               supplier:
- *                 type: string
+ *           type: string
  *     responses:
  *       200:
- *         description: Wire updated
+ *         description: Remaining kg
  */
+router.get("/balance/:wireType", authorize([Role.OWNER]), getWireBalanceByType);
 
 /**
  * @swagger
- * /api/wire/delete/{id}:
+ * /api/wires/{id}:
  *   delete:
  *     summary: Delete wire entry
  *     tags: [Wire]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: id
+ *       - name: id
+ *         in: path
  *         required: true
- *         schema:
- *           type: integer
  *     responses:
- *       200:
- *         description: Wire deleted
+ *       204:
+ *         description: Deleted
  */
-
-/**
- * @swagger
- * /api/wire/available:
- *   get:
- *     summary: Get all available wire (by type, diameter)
- *     tags: [Wire]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of available wire stock
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id:
- *                     type: integer
- *                   type:
- *                     type: string
- *                   diameter:
- *                     type: string
- *                   quantityKg:
- *                     type: number
- *                   pricePerKg:
- *                     type: number
- *                   supplier:
- *                     type: string
- *                   createdAt:
- *                     type: string
- *                     format: date-time
- */
-
-// 👇 Route definitions
-router.get("/available", verifyToken, asyncHandler(getAvailableWire));
-router.get("/", verifyToken, asyncHandler(getAllWire));
-router.post("/create", verifyToken, requireOwner, asyncHandler(addWire));
-router.put("/update/:id", verifyToken, requireOwner, asyncHandler(updateWire));
-router.delete(
-  "/delete/:id",
-  verifyToken,
-  requireOwner,
-  asyncHandler(deleteWire)
-);
+router.delete("/:id", authorize([Role.OWNER]), deleteWire);
 
 export default router;
 
 
---- File: src\utils\asyncHandler.ts ---
-import { Request, Response, NextFunction } from "express";
+--- File: src\services\auth.service.ts ---
+import bcrypt from "bcryptjs";
+import { prisma } from "../config/prisma";
+import { generateToken } from "../utils/jwt";
+import { Role } from "@prisma/client";
 
-export const asyncHandler =
-  (fn: Function) => (req: Request, res: Response, next: NextFunction) =>
-    Promise.resolve(fn(req, res, next)).catch(next);
+interface RegisterInput {
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  password: string;
+  role: Role;
+}
 
+export const registerUser = async (input: RegisterInput) => {
+  const { email, password } = input;
 
---- File: src\utils\excelExporter.ts ---
-import ExcelJS from "exceljs";
-import { Response } from "express";
+  const exists = await prisma.user.findUnique({ where: { email } });
+  if (exists) throw { status: 400, message: "Email already registered" };
 
-export const exportMonthlyReportToExcel = async (
-  report: any,
-  res: Response
-) => {
-  const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet("Monthly Report");
+  const hashedPassword = await bcrypt.hash(password, 10);
 
-  sheet.columns = [
-    { header: "Metric", key: "metric", width: 30 },
-    { header: "Value", key: "value", width: 50 },
-  ];
-
-  sheet.addRows([
-    { metric: "Month", value: report.month },
-    { metric: "Total Mesh Produced", value: report.totalMeshProduced },
-    { metric: "Wire Used (kg)", value: report.wireUsedKg },
-    { metric: "Total Sold", value: report.totalSold },
-    { metric: "Total Revenue", value: report.totalRevenue },
-  ]);
-
-  sheet.addRow([]);
-  sheet.addRow({ metric: "Top Clients", value: "" });
-
-  report.topClients.forEach((client: any) => {
-    sheet.addRow({ metric: client.name, value: client.totalSpent });
+  const user = await prisma.user.create({
+    data: { ...input, password: hashedPassword },
   });
 
-  res.setHeader(
-    "Content-Type",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  );
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename=report-${report.month}.xlsx`
-  );
-  await workbook.xlsx.write(res);
-  res.end();
+  const token = generateToken(user.id);
+
+  return { token, user };
+};
+
+interface LoginInput {
+  email: string;
+  password: string;
+}
+
+export const loginUser = async ({ email, password }: LoginInput) => {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) throw { status: 401, message: "User not found" };
+
+  const match = await bcrypt.compare(password, user.password);
+  if (!match) throw { status: 401, message: "Invalid password" };
+
+  const token = generateToken(user.id);
+
+  return { token, user };
 };
 
 
---- File: src\utils\token.ts ---
-import jwt from "jsonwebtoken";
+--- File: src\services\client.service.ts ---
+import { prisma } from "../config/prisma";
 
-export const generateToken = (id: number, role: string) => {
-  return jwt.sign({ id, role }, process.env.JWT_SECRET as string, {
-    expiresIn: "7d",
+export const createClient = async (data: any) => {
+  return prisma.client.create({ data });
+};
+
+export const getAllClients = async () => {
+  return prisma.client.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+export const getClientById = async (id: string) => {
+  const client = await prisma.client.findUnique({ where: { id } });
+  if (!client) throw { status: 404, message: "Client not found" };
+  return client;
+};
+
+export const updateClient = async (id: string, data: any) => {
+  return prisma.client.update({ where: { id }, data });
+};
+
+export const deleteClient = async (id: string) => {
+  return prisma.client.delete({ where: { id } });
+};
+
+
+--- File: src\services\finance.service.ts ---
+import { prisma } from "../config/prisma";
+
+export const createFinanceEntry = async (data: {
+  type: "income" | "expense";
+  category: string;
+  amount: number;
+  description?: string;
+}) => {
+  return prisma.finance.create({ data });
+};
+
+export const getAllFinance = async () => {
+  return prisma.finance.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+export const getFinanceByMonth = async (month: string) => {
+  const [year, m] = month.split("-").map(Number);
+  const from = new Date(year, m - 1, 1);
+  const to = new Date(year, m, 1);
+
+  return prisma.finance.findMany({
+    where: {
+      createdAt: {
+        gte: from,
+        lt: to,
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+export const deleteFinanceEntry = async (id: string) => {
+  return prisma.finance.delete({ where: { id } });
+};
+
+
+--- File: src\services\invoice.service.ts ---
+// services/invoice.service.ts
+import { prisma } from "../config/prisma";
+import { calculateInvoiceTotal } from "../utils/calculate";
+import { generateInvoicePDF } from "../utils/pdf";
+import { sendEmail } from "../utils/mail";
+import fs from "fs";
+
+export const createInvoice = async (
+  sellerId: string,
+  input: {
+    clientId: string;
+    meshTypeId: string;
+    quantity: number;
+    pricePerUnit: number;
+    amountPaid?: number;
+  }
+) => {
+  const mesh = await prisma.meshType.findUnique({
+    where: { id: input.meshTypeId },
+  });
+  if (!mesh) throw { status: 404, message: "Mesh type not found" };
+
+  if (mesh.currentStock < input.quantity) {
+    throw { status: 400, message: "Not enough mesh in stock" };
+  }
+
+  const total = calculateInvoiceTotal(input.quantity, input.pricePerUnit);
+  const paid = input.amountPaid || 0;
+  const due = total - paid;
+
+  const invoice = await prisma.invoice.create({
+    data: {
+      sellerId,
+      clientId: input.clientId,
+      meshTypeId: input.meshTypeId,
+      quantity: input.quantity,
+      pricePerUnit: input.pricePerUnit,
+      total,
+      amountPaid: paid,
+      dueAmount: due,
+      isPaid: due <= 0,
+    },
+  });
+
+  await prisma.meshType.update({
+    where: { id: input.meshTypeId },
+    data: {
+      currentStock: { decrement: input.quantity },
+    },
+  });
+
+  return invoice;
+};
+
+export const getAllInvoices = async () => {
+  return prisma.invoice.findMany({
+    include: {
+      meshType: true,
+      client: true,
+      seller: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+export const getInvoiceById = async (id: string) => {
+  const invoice = await prisma.invoice.findUnique({
+    where: { id },
+    include: {
+      meshType: true,
+      client: true,
+      seller: true,
+    },
+  });
+  if (!invoice) throw { status: 404, message: "Invoice not found" };
+  return invoice;
+};
+
+export const deleteInvoice = async (id: string) => {
+  return prisma.invoice.delete({ where: { id } });
+};
+
+export const addPayment = async (invoiceId: string, amount: number) => {
+  const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
+  if (!invoice) throw { status: 404, message: "Invoice not found" };
+
+  await prisma.paymentLog.create({
+    data: { invoiceId, amount },
+  });
+
+  const newAmountPaid = invoice.amountPaid + amount;
+  const newDue = invoice.total - newAmountPaid;
+
+  return prisma.invoice.update({
+    where: { id: invoiceId },
+    data: {
+      amountPaid: newAmountPaid,
+      dueAmount: newDue,
+      isPaid: newDue <= 0,
+    },
+  });
+};
+
+export const getInvoicePDF = async (invoiceId: string): Promise<Buffer> => {
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+    include: { client: true, meshType: true, seller: true },
+  });
+
+  if (!invoice) throw { status: 404, message: "Invoice not found" };
+
+  const filePath = `/tmp/invoice-${invoiceId}.pdf`;
+  await generateInvoicePDF(invoice, filePath);
+  return fs.readFileSync(filePath);
+};
+
+export const emailInvoice = async (invoiceId: string) => {
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+    include: { client: true, meshType: true, seller: true },
+  });
+
+  if (!invoice || !invoice.client?.email) {
+    throw { status: 400, message: "No client email available" };
+  }
+
+  const filePath = `/tmp/invoice-${invoiceId}.pdf`;
+  await generateInvoicePDF(invoice, filePath);
+
+  await sendEmail(
+    invoice.client.email,
+    `Invoice for mesh purchase`,
+    `<p>Dear ${invoice.client.name},<br/>Please find attached your invoice.</p>`,
+    [{ filename: "invoice.pdf", path: filePath }]
+  );
+};
+
+
+--- File: src\services\machine.service.ts ---
+import { prisma } from "../config/prisma";
+
+export const createMachine = async (data: {
+  name: string;
+  description?: string;
+}) => {
+  return prisma.machine.create({ data });
+};
+
+export const getAllMachines = async () => {
+  return prisma.machine.findMany({ orderBy: { createdAt: "desc" } });
+};
+
+export const getMachineById = async (id: string) => {
+  const machine = await prisma.machine.findUnique({ where: { id } });
+  if (!machine) throw { status: 404, message: "Machine not found" };
+  return machine;
+};
+
+export const updateMachine = async (id: string, data: any) => {
+  return prisma.machine.update({ where: { id }, data });
+};
+
+export const deleteMachine = async (id: string) => {
+  return prisma.machine.delete({ where: { id } });
+};
+
+export const createMachineLog = async (
+  machineId: string,
+  userId: string,
+  log: { startedAt: string; endedAt?: string }
+) => {
+  return prisma.machineLog.create({
+    data: {
+      machineId,
+      userId,
+      startedAt: new Date(log.startedAt),
+      endedAt: log.endedAt ? new Date(log.endedAt) : null,
+    },
+  });
+};
+
+export const getMachineLogs = async (machineId: string) => {
+  return prisma.machineLog.findMany({
+    where: { machineId },
+    include: { user: true },
+    orderBy: { startedAt: "desc" },
+  });
+};
+
+
+--- File: src\services\mesh.service.ts ---
+import { prisma } from "../config/prisma";
+
+export const createMeshType = async (data: any) => {
+  return prisma.meshType.create({ data });
+};
+
+export const getAllMeshTypes = async () => {
+  return prisma.meshType.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+export const getMeshTypeById = async (id: string) => {
+  const mesh = await prisma.meshType.findUnique({ where: { id } });
+  if (!mesh) throw { status: 404, message: "Mesh type not found" };
+  return mesh;
+};
+
+export const updateMeshType = async (id: string, data: any) => {
+  return prisma.meshType.update({ where: { id }, data });
+};
+
+export const deleteMeshType = async (id: string) => {
+  return prisma.meshType.delete({ where: { id } });
+};
+
+
+--- File: src\services\production.service.ts ---
+import { prisma } from "../config/prisma";
+import { calculateWireUsageKg } from "../utils/calculate";
+
+export const createProduction = async (
+  userId: string,
+  input: {
+    meshTypeId: string;
+    quantity: number;
+    startedAt: string;
+    finishedAt: string;
+  }
+) => {
+  const meshType = await prisma.meshType.findUnique({
+    where: { id: input.meshTypeId },
+  });
+  if (!meshType) throw { status: 404, message: "Mesh type not found" };
+
+  const wireUsedKg = calculateWireUsageKg(
+    input.quantity,
+    meshType.weightPerPiece
+  );
+
+  // Find matching wire to deduct from
+  const wires = await prisma.wire.findMany({
+    where: { wireType: meshType.wireType },
+    orderBy: { createdAt: "asc" },
+  });
+
+  let remainingToUse = wireUsedKg;
+  for (const wire of wires) {
+    const available = wire.quantityKg - wire.usedKg;
+    if (available <= 0) continue;
+
+    const deduct = Math.min(available, remainingToUse);
+    await prisma.wire.update({
+      where: { id: wire.id },
+      data: { usedKg: { increment: deduct } },
+    });
+
+    remainingToUse -= deduct;
+    if (remainingToUse <= 0) break;
+  }
+
+  if (remainingToUse > 0)
+    throw { status: 400, message: "Not enough wire in stock" };
+
+  // Save production log
+  const production = await prisma.production.create({
+    data: {
+      userId,
+      meshTypeId: input.meshTypeId,
+      quantity: input.quantity,
+      startedAt: new Date(input.startedAt),
+      finishedAt: new Date(input.finishedAt),
+    },
+  });
+
+  // Update mesh stock
+  await prisma.meshType.update({
+    where: { id: input.meshTypeId },
+    data: {
+      currentStock: { increment: input.quantity },
+    },
+  });
+
+  return production;
+};
+
+export const getAllProductions = async () => {
+  return prisma.production.findMany({
+    include: {
+      user: true,
+      meshType: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+export const getProductionByDate = async (date: string) => {
+  const day = new Date(date);
+  const nextDay = new Date(day);
+  nextDay.setDate(day.getDate() + 1);
+
+  return prisma.production.findMany({
+    where: {
+      createdAt: {
+        gte: day,
+        lt: nextDay,
+      },
+    },
+    include: {
+      user: true,
+      meshType: true,
+    },
+  });
+};
+
+
+--- File: src\services\report.service.ts ---
+// services/report.service.ts
+import { prisma } from "../config/prisma";
+
+export const getTopSellingMeshes = async () => {
+  const results = await prisma.invoice.groupBy({
+    by: ["meshTypeId"],
+    _sum: { quantity: true, total: true },
+    orderBy: { _sum: { quantity: "desc" } },
+    take: 5,
+  });
+
+  const withNames = await Promise.all(
+    results.map(async (r) => {
+      const mesh = await prisma.meshType.findUnique({
+        where: { id: r.meshTypeId },
+      });
+      return {
+        meshType: mesh?.type || "Unknown",
+        quantitySold: r._sum.quantity,
+        revenue: r._sum.total,
+      };
+    })
+  );
+
+  return withNames;
+};
+
+export const getTopClients = async () => {
+  const results = await prisma.invoice.groupBy({
+    by: ["clientId"],
+    _sum: { total: true },
+    orderBy: { _sum: { total: "desc" } },
+    take: 5,
+  });
+
+  const withClients = await Promise.all(
+    results.map(async (r) => {
+      const client = await prisma.client.findUnique({
+        where: { id: r.clientId },
+      });
+      return {
+        clientName: client?.name || "Unknown",
+        totalSpent: r._sum.total,
+      };
+    })
+  );
+
+  return withClients;
+};
+
+export const getTopWorkers = async () => {
+  const results = await prisma.production.groupBy({
+    by: ["userId"],
+    _sum: { quantity: true },
+    orderBy: { _sum: { quantity: "desc" } },
+    take: 5,
+  });
+
+  const withNames = await Promise.all(
+    results.map(async (r) => {
+      const user = await prisma.user.findUnique({ where: { id: r.userId } });
+      return {
+        workerName: user?.name || "Unknown",
+        totalProduced: r._sum.quantity,
+      };
+    })
+  );
+
+  return withNames;
+};
+
+export const getCurrentStock = async () => {
+  const meshes = await prisma.meshType.findMany({
+    select: { type: true, currentStock: true, stockThreshold: true },
+  });
+
+  return meshes.map((m) => ({
+    type: m.type,
+    currentStock: m.currentStock,
+    stockThreshold: m.stockThreshold,
+    lowStock: m.currentStock <= (m.stockThreshold || 0),
+  }));
+};
+
+export const getWireEfficiency = async () => {
+  const wires = await prisma.wire.findMany();
+  const usedKg = wires.reduce((sum, w) => sum + w.usedKg, 0);
+  const totalKg = wires.reduce((sum, w) => sum + w.quantityKg, 0);
+
+  const efficiency = totalKg > 0 ? (usedKg / totalKg) * 100 : 0;
+
+  return {
+    totalWire: totalKg,
+    usedWire: usedKg,
+    efficiencyPercent: efficiency.toFixed(2),
+  };
+};
+
+
+--- File: src\services\salary.service.ts ---
+import { prisma } from "../config/prisma";
+import { startOfMonth, endOfMonth } from "date-fns";
+
+export const createSalary = async (input: {
+  userId: string;
+  month: string;
+  amount?: number;
+}) => {
+  const existing = await prisma.salary.findFirst({
+    where: { userId: input.userId, month: input.month },
+  });
+  if (existing)
+    throw { status: 400, message: "Salary already exists for this month" };
+
+  let calculatedAmount = input.amount;
+
+  const user = await prisma.user.findUnique({ where: { id: input.userId } });
+  if (!user) throw { status: 404, message: "User not found" };
+
+  if (!input.amount && user.role === "WORKER") {
+    const monthStart = startOfMonth(new Date(input.month));
+    const monthEnd = endOfMonth(new Date(input.month));
+
+    const productions = await prisma.production.findMany({
+      where: {
+        userId: input.userId,
+        createdAt: {
+          gte: monthStart,
+          lte: monthEnd,
+        },
+      },
+      include: { meshType: true },
+    });
+
+    calculatedAmount = productions.reduce((total, prod) => {
+      return total + prod.quantity * (prod.meshType?.priceForWorker || 0);
+    }, 0);
+  }
+
+  return prisma.salary.create({
+    data: {
+      userId: input.userId,
+      month: input.month,
+      amount: calculatedAmount || 0,
+    },
+  });
+};
+
+export const getAllSalaries = async () => {
+  return prisma.salary.findMany({
+    include: { user: true },
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+export const getSalariesByMonth = async (month: string) => {
+  return prisma.salary.findMany({
+    where: { month },
+    include: { user: true },
+  });
+};
+
+export const markSalaryAsPaid = async (id: string) => {
+  return prisma.salary.update({
+    where: { id },
+    data: { paid: true },
+  });
+};
+
+
+--- File: src\services\user.service.ts ---
+import { prisma } from "../config/prisma";
+import { Role } from "@prisma/client";
+
+export const getAllUsers = async () => {
+  return prisma.user.findMany({
+    where: { NOT: { role: Role.OWNER } },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      address: true,
+      role: true,
+      createdAt: true,
+    },
+  });
+};
+
+export const getUserById = async (id: string) => {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw { status: 404, message: "User not found" };
+  return user;
+};
+
+export const updateUser = async (id: string, data: any) => {
+  return prisma.user.update({
+    where: { id },
+    data,
+  });
+};
+
+export const deleteUser = async (id: string) => {
+  return prisma.user.delete({ where: { id } });
+};
+
+
+--- File: src\services\wire.service.ts ---
+import { prisma } from "../config/prisma";
+
+export const createWire = async (data: {
+  wireType: string;
+  quantityKg: number;
+}) => {
+  return prisma.wire.create({
+    data: {
+      wireType: data.wireType,
+      quantityKg: data.quantityKg,
+    },
+  });
+};
+
+export const getAllWires = async () => {
+  return prisma.wire.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+export const deleteWire = async (id: string) => {
+  return prisma.wire.delete({ where: { id } });
+};
+
+export const getRemainingWireByType = async (wireType: string) => {
+  const wires = await prisma.wire.findMany({
+    where: { wireType },
+  });
+
+  const total = wires.reduce((sum, w) => sum + w.quantityKg, 0);
+  const used = wires.reduce((sum, w) => sum + w.usedKg, 0);
+  return total - used;
+};
+
+
+--- File: src\types\express.d.ts ---
+import { User } from "@prisma/client";
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: User;
+      lang?: Lang;
+    }
+  }
+}
+
+
+--- File: src\types\role.enum.ts ---
+export enum Role {
+  OWNER = "OWNER",
+  MANAGER = "MANAGER",
+  WORKER = "WORKER",
+  DRIVER = "DRIVER",
+  COOK = "COOK",
+}
+
+
+--- File: src\utils\calculate.ts ---
+export const calculateWorkerSalary = (
+  quantity: number,
+  pricePerUnit: number
+): number => quantity * pricePerUnit;
+
+export const calculateWireUsageKg = (
+  quantity: number,
+  weightPerPiece: number
+): number => quantity * weightPerPiece;
+
+export const calculateInvoiceTotal = (
+  quantity: number,
+  pricePerUnit: number
+): number => quantity * pricePerUnit;
+
+
+--- File: src\utils\jwt.ts ---
+import jwt from "jsonwebtoken";
+import { ENV } from "../config/env";
+
+export const generateToken = (id: string): string => {
+  return jwt.sign({ id }, ENV.JWT_SECRET, {
+    expiresIn: ENV.JWT_EXPIRES_IN, // can be string like '7d'
+  } as jwt.SignOptions);
+};
+
+export const verifyToken = (token: string) => {
+  return jwt.verify(token, ENV.JWT_SECRET);
+};
+
+
+--- File: src\utils\mail.ts ---
+import nodemailer from "nodemailer";
+import { ENV } from "../config/env";
+
+export const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+export const sendEmail = async (
+  to: string,
+  subject: string,
+  html: string,
+  attachments?: any[]
+) => {
+  return transporter.sendMail({
+    from: ENV.EMAIL_FROM,
+    to,
+    subject,
+    html,
+    attachments,
+  });
+};
+
+
+--- File: src\utils\pdf.ts ---
+import PDFDocument from "pdfkit";
+import fs from "fs";
+import { t } from "../i18n/messages";
+import { Lang } from "../i18n/messages";
+
+export const generateInvoicePDF = async (
+  invoiceData: any,
+  outputPath: string,
+  lang: string = "en"
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument();
+    const stream = fs.createWriteStream(outputPath);
+
+    doc.pipe(stream);
+
+    doc
+      .fontSize(20)
+      .text(t("invoice.title", lang as Lang), { align: "center" });
+    doc.moveDown();
+    doc
+      .fontSize(14)
+      .text(`${t("invoice.client", lang as Lang)}: ${invoiceData.clientName}`);
+    doc.text(`${t("invoice.meshType", lang as Lang)}: ${invoiceData.meshType}`);
+    doc.text(`${t("invoice.quantity", lang as Lang)}: ${invoiceData.quantity}`);
+    doc.text(
+      `${t("invoice.unitPrice", lang as Lang)}: ${invoiceData.pricePerUnit}`
+    );
+    doc.text(`${t("invoice.total", lang as Lang)}: ${invoiceData.total}`);
+    doc.text(
+      `${t("invoice.date", lang as Lang)}: ${new Date(
+        invoiceData.createdAt
+      ).toLocaleDateString(lang)}`
+    );
+
+    doc.end();
+
+    stream.on("finish", () => resolve());
+    stream.on("error", (err) => reject(err));
   });
 };
 
@@ -2185,7 +3517,7 @@ export const generateToken = (id: number, role: string) => {
       "./src"
     ], /* Allow multiple folders to be treated as one when resolving modules. */
     "typeRoots": [
-      "./types",
+      "src/types",
       "./node_modules/@types"
     ], /* Specify multiple folders that act like './node_modules/@types'. */
     // "types": [],                                      /* Specify type package names to be included without being referenced in a source file. */
@@ -2262,22 +3594,7 @@ export const generateToken = (id: number, role: string) => {
   },
   "include": [
     "src",
-    "types",
+    "src/types",
     "scripts"
   ]
 }
-
---- File: types\express.d.ts ---
-import { Request } from "express";
-
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        id: number;
-        role: string;
-      };
-    }
-  }
-}
-export {};

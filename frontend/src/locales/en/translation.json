@@ -1,12 +1,80 @@
 {
-  "dashboard": "Dashboard",
-  "wire": "Wire",
-  "mesh": "Mesh",
-  "clients": "Clients",
-  "invoices": "Invoices",
-  "employees": "Employees",
-  "expenses": "Expenses",
-  "machines": "Machines",
-  "reports": "Reports",
-  "settings": "Settings"
+  "nav": {
+    "dashboard": "Dashboard",
+    "wire": "Wire",
+    "mesh": "Mesh",
+    "clients": "Clients",
+    "invoices": "Invoices",
+    "employees": "Employees",
+    "expenses": "Expenses",
+    "machines": "Machines",
+    "reports": "Reports",
+    "settings": "Settings"
+  },
+  "pages": {
+    "dashboard": {
+      "title": "Dashboard",
+      "description": "Overview and statistics",
+      "stats": {
+        "totalMesh": "Total Mesh",
+        "totalRevenue": "Total Revenue",
+        "wireUsed": "Wire Used",
+        "invoices": "Invoices"
+      },
+      "charts": {
+        "meshByType": "Mesh by Type",
+        "wireUsage": "Wire Usage (kg)",
+        "revenue": "Revenue Over Time",
+        "noData": "No data available"
+      },
+      "activity": {
+        "recentMesh": "Recent Mesh",
+        "recentInvoices": "Recent Invoices",
+        "recentWire": "Recent Wire Stock"
+      },
+      "clients": {
+        "topClients": "Top Clients",
+        "currency": "TJS"
+      }
+    },
+    "wire": {
+      "title": "Wire Stock",
+      "description": "Manage and track wire inventory"
+    },
+    "mesh": {
+      "title": "Mesh Production",
+      "description": "Log mesh making and usage"
+    },
+    "clients": {
+      "title": "Clients",
+      "description": "Manage client list and contact info"
+    },
+    "invoices": {
+      "title": "Invoices",
+      "description": "Track and generate invoices"
+    },
+    "employees": {
+      "title": "Employees",
+      "description": "Manage staff roles and salaries"
+    },
+    "expenses": {
+      "title": "Expenses",
+      "description": "View and log business expenses"
+    },
+    "machines": {
+      "title": "Machines",
+      "description": "Maintenance and usage logs"
+    },
+    "reports": {
+      "title": "Reports",
+      "description": "Generate monthly reports"
+    },
+    "settings": {
+      "title": "Settings",
+      "description": "App configuration and preferences"
+    }
+  },
+  "errors": {
+    "not_found": "Page not found"
+  }
 }

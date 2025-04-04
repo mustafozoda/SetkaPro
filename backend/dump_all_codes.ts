@@ -50,3 +50,4 @@ collectFiles(".");
 outputStream.end(() => {
   console.log(`✅ Code dump saved to ${outputFile}`);
 });
+// npx ts-node dump_all_codes.ts

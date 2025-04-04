@@ -2,8 +2,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useNavigate } from "react-router-dom";
-import API from "../../services/api"; // Import the centralized API service
-import { toast } from "react-hot-toast"; // Toast notifications for feedback
+import API from "../../services/api";
+import { toast } from "react-hot-toast";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -24,11 +24,11 @@ export default function RegisterPage() {
 
   const onSubmit = async (data: RegisterForm) => {
     try {
-      await API.post("/api/auth/register", { ...data, role: "OWNER" }); // API register call
-      navigate("/login"); // Redirect to login after successful registration
-      toast.success("Registration successful!"); // Success toast notification
+      await API.post("/auth/register", { ...data, role: "OWNER" });
+      navigate("/login");
+      toast.success("Registration successful!");
     } catch (err) {
-      toast.error("Registration failed!"); // Error toast notification
+      toast.error("Registration failed!");
     }
   };
 

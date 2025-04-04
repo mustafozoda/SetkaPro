@@ -12,10 +12,10 @@ import {
   Users,
   ClipboardList,
   BarChart2,
-} from "lucide-react"; // Ensure all icons are imported correctly
+} from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useTheme } from "../../stores/useTheme"; // Zustand for theme
-import { useTranslation } from "react-i18next"; // Import i18next
+import { useTheme } from "../../stores/useTheme";
+import { useTranslation } from "react-i18next";
 
 const navItems = [
   { label: "dashboard", icon: LayoutDashboard, to: "/dashboard" },
@@ -31,15 +31,15 @@ const navItems = [
 ];
 
 export default function Sidebar() {
-  const { t } = useTranslation(); // Initialize translation hook
+  const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { theme } = useTheme(); // Zustand for theme
+  const { theme } = useTheme();
 
   const translatedItems = navItems.map((item) => ({
     ...item,
-    label: t(item.label), // Dynamically change labels using i18next
+    label: t(`nav.${item.label}`),
   }));
 
   return (
@@ -49,7 +49,7 @@ export default function Sidebar() {
       items={translatedItems}
       activePath={pathname}
       onNavigate={(to) => navigate(to)}
-      theme={theme} // Passing the theme prop here
+      theme={theme}
     />
   );
 }

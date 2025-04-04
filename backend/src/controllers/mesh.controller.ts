@@ -1,49 +1,66 @@
 import { Request, Response } from "express";
-import prisma from "../prisma/client";
-import { asyncHandler } from "../utils/asyncHandler";
+import { prisma } from "../config/prisma";
 
-// GET all mesh
-export const getAllMesh = asyncHandler(async (_req: Request, res: Response) => {
-  const mesh = await prisma.meshProduction.findMany({
-    include: { employee: true },
-    orderBy: { createdAt: "desc" },
-  });
-  res.json(mesh);
-});
-
-// POST create mesh + deduct wire by type & diameter
-export const addMesh = asyncHandler(async (req: Request, res: Response) => {
-  const { meshType, quantity, wireUsedKg, wireDiameter, employeeId } = req.body;
-
-  if (!meshType || !wireDiameter || !quantity || !wireUsedKg || !employeeId) {
-    return res.status(400).json({ error: "Missing required mesh fields" });
+// Create a new mesh type
+export const createMeshType = async (req: Request, res: Response) => {
+  try {
+    const mesh = await prisma.meshType.create({ data: req.body });
+    res.status(201).json(mesh);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to create mesh type", error: err });
   }
+};
 
-  // Create mesh production
-  const mesh = await prisma.meshProduction.create({
-    data: { meshType, quantity, wireUsedKg, wireDiameter, employeeId },
-  });
+// Get all mesh types
+export const getAllMeshTypes = async (req: Request, res: Response) => {
+  try {
+    const meshes = await prisma.meshType.findMany();
+    res.status(200).json(meshes);
+  } catch (err) {
+    res
+      .status(500)
+      .json({ message: "Failed to retrieve mesh types", error: err });
+  }
+};
 
-  const baseType = meshType.split("x")[0]; // e.g., "10" from "10x10"
-
-  // Deduct wire based on type + diameter
-  const wireUpdate = await prisma.wire.updateMany({
-    where: {
-      type: baseType,
-      diameter: wireDiameter,
-    },
-    data: {
-      quantityKg: {
-        decrement: wireUsedKg,
-      },
-    },
-  });
-
-  if (wireUpdate.count === 0) {
-    return res.status(404).json({
-      error: `No matching wire found for type "${baseType}" and diameter "${wireDiameter}"`,
+// Get a specific mesh type by ID
+export const getMeshTypeById = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const mesh = await prisma.meshType.findUnique({
+      where: { id: req.params.id },
     });
+    if (!mesh) {
+      res.status(404).json({ message: "Mesh type not found" });
+      return;
+    }
+    res.status(200).json(mesh);
+  } catch (err) {
+    res.status(500).json({ message: "Error getting mesh type", error: err });
   }
+};
 
-  res.status(201).json(mesh);
-});
+// Update a mesh type
+export const updateMeshType = async (req: Request, res: Response) => {
+  try {
+    const mesh = await prisma.meshType.update({
+      where: { id: req.params.id },
+      data: req.body,
+    });
+    res.status(200).json(mesh);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to update mesh type", error: err });
+  }
+};
+
+// Delete a mesh type
+export const deleteMeshType = async (req: Request, res: Response) => {
+  try {
+    await prisma.meshType.delete({ where: { id: req.params.id } });
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ message: "Failed to delete mesh type", error: err });
+  }
+};

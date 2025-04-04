@@ -1,21 +1,14 @@
 import { Outlet } from "react-router-dom";
 import Sidebar from "../components/logic/Sidebar";
 import Navbar from "../components/logic/Navbar";
-import { useTheme } from "../stores/useTheme"; // Zustand for theme
 
 export default function MainLayout() {
-  const { theme } = useTheme();
-
   return (
-    <div
-      className={`flex h-screen ${
-        theme === "dark" ? "bg-gray-900 text-white" : "bg-white text-gray-900"
-      }`}
-    >
+    <div className="flex h-screen  transition-bg duration-300 bg-lightBg dark:bg-background text-lightText dark:text-accent">
       <Sidebar />
       <div className="flex flex-col flex-1">
         <Navbar />
-        <main className="p-4 overflow-y-auto h-full">
+        <main className="overflow-y-auto w-[80%] mx-auto scrollbar-hide h-full">
           <Outlet />
         </main>
       </div>

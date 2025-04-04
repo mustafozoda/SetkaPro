@@ -1,12 +1,80 @@
 {
-  "dashboard": "Панель управления",
-  "wire": "Проволока",
-  "mesh": "Сетка",
-  "clients": "Клиенты",
-  "invoices": "Счета",
-  "employees": "Сотрудники",
-  "expenses": "Расходы",
-  "machines": "Машины",
-  "reports": "Отчеты",
-  "settings": "Настройки"
+  "nav": {
+    "dashboard": "Главная",
+    "wire": "Проволока",
+    "mesh": "Сетка",
+    "clients": "Клиенты",
+    "invoices": "Счета",
+    "employees": "Сотрудники",
+    "expenses": "Расходы",
+    "machines": "Оборудование",
+    "reports": "Отчёты",
+    "settings": "Настройки"
+  },
+  "pages": {
+    "dashboard": {
+      "title": "Панель управления",
+      "description": "Обзор и статистика",
+      "stats": {
+        "totalMesh": "Всего сетки",
+        "totalRevenue": "Общая выручка",
+        "wireUsed": "Использовано проволоки",
+        "invoices": "Счета"
+      },
+      "charts": {
+        "meshByType": "Сетка по типу",
+        "wireUsage": "Использование проволоки (кг)",
+        "revenue": "Доход по времени",
+        "noData": "Нет данных"
+      },
+      "activity": {
+        "recentMesh": "Последняя сетка",
+        "recentInvoices": "Последние счета",
+        "recentWire": "Последняя проволока"
+      },
+      "clients": {
+        "topClients": "Лучшие клиенты",
+        "currency": "сомони"
+      }
+    },
+    "wire": {
+      "title": "Склад проволоки",
+      "description": "Управление и учёт проволоки"
+    },
+    "mesh": {
+      "title": "Производство сетки",
+      "description": "Учёт производства и использования сетки"
+    },
+    "clients": {
+      "title": "Клиенты",
+      "description": "Управление списком и контактами клиентов"
+    },
+    "invoices": {
+      "title": "Счета",
+      "description": "Отслеживание и создание счетов"
+    },
+    "employees": {
+      "title": "Сотрудники",
+      "description": "Роли персонала и зарплаты"
+    },
+    "expenses": {
+      "title": "Расходы",
+      "description": "Просмотр и добавление расходов"
+    },
+    "machines": {
+      "title": "Оборудование",
+      "description": "Обслуживание и учёт использования"
+    },
+    "reports": {
+      "title": "Отчёты",
+      "description": "Создание ежемесячных отчётов"
+    },
+    "settings": {
+      "title": "Настройки",
+      "description": "Конфигурация приложения и предпочтения"
+    }
+  },
+  "errors": {
+    "not_found": "Страница не найдена"
+  }
 }

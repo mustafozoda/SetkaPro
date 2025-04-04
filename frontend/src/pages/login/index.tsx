@@ -2,9 +2,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../stores/useAuth"; // Zustand for auth
-import API from "../../services/api"; // Import the centralized API service
-import { toast } from "react-hot-toast"; // Toast notifications for feedback
+import { useAuth } from "../../stores/useAuth";
+import API from "../../services/api";
+import { toast } from "react-hot-toast";
 
 const schema = z.object({
   email: z.string().email(),
@@ -14,7 +14,7 @@ const schema = z.object({
 type LoginForm = z.infer<typeof schema>;
 
 export default function LoginPage() {
-  const login = useAuth((state) => state.login); // Zustand login function
+  const login = useAuth((state) => state.login);
   const navigate = useNavigate();
 
   const {
@@ -25,12 +25,12 @@ export default function LoginPage() {
 
   const onSubmit = async (data: LoginForm) => {
     try {
-      const res = await API.post("/api/auth/login", data); // API login call
-      login(res.data.token, res.data.user); // Store user and token in Zustand
-      navigate("/dashboard"); // Redirect to dashboard
-      toast.success("Login successful!"); // Success toast notification
+      const res = await API.post("/auth/login", data);
+      login(res.data.token, res.data.user);
+      navigate("/dashboard");
+      toast.success("Login successful!");
     } catch (err) {
-      toast.error("Login failed!"); // Error toast notification
+      toast.error("Login failed!");
     }
   };
 
